@@ -370,8 +370,13 @@ class BotDatabase:
 
         # Auto-deactivate if expired
         if result['subscription_active'] and result['subscription_expires']:
-            from datetime import timezone
-            if result['subscription_expires'] < datetime.now(timezone.utc):
+            expires = result['subscription_expires']
+            now = datetime.now()
+            # Handle timezone-aware vs naive comparison
+            if expires.tzinfo is not None:
+                from datetime import timezone
+                now = datetime.now(timezone.utc)
+            if expires < now:
                 self.deactivate_subscription(telegram_id)
                 return False
 

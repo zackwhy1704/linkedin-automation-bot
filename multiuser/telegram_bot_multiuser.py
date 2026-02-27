@@ -89,6 +89,9 @@ db = BotDatabase()
 # Encryption helper
 cipher = Fernet(ENCRYPTION_KEY)
 
+# Global application reference (set in main(), used by legacy thread functions)
+application = None
+
 
 def encrypt_password(password: str) -> bytes:
     """Encrypt password before storing"""
@@ -575,35 +578,6 @@ async def linkedin_password(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     )
     return CONTENT_THEMES
 
-    # Show subscription options
-    keyboard = [
-        [InlineKeyboardButton("💳 Subscribe for $0.99/day", callback_data='subscribe_daily')],
-        [InlineKeyboardButton("🎁 I have a promo code", callback_data='promo_code')],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await update.message.reply_text(
-        "💎 Premium Access - Just $0.99/day\n\n"
-        "Get unlimited access to:\n"
-        "✓ AI-generated posts (unlimited)\n"
-        "✓ Smart feed engagement (likes + comments)\n"
-        "✓ Automated networking & connection requests\n"
-        "✓ Personalized AI messages\n"
-        "✓ Advanced analytics dashboard\n"
-        "✓ 24/7 automation on autopilot\n"
-        "✓ Priority support\n\n"
-        "💰 Pricing:\n"
-        "• $0.99 charged daily (cancel anytime)\n"
-        "• Less than a cup of coffee!\n"
-        "• ~$30/month only if you keep it\n\n"
-        "💳 Payment: All major credit cards accepted\n"
-        "🔒 Secure: Powered by Stripe\n\n"
-        "Choose an option:",
-        reply_markup=reply_markup
-    )
-
-    return PAYMENT_PROCESSING
-
 
 async def handle_promo_code_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handle promo code text input"""
@@ -632,7 +606,7 @@ async def handle_promo_code_input(update: Update, context: ContextTypes.DEFAULT_
                 "• Add your LinkedIn account\n"
                 "• Start automating engagement\n"
                 "• Grow your network\n\n"
-                "Type /menu to get started! 🚀"
+                "Type /help to get started! 🚀"
             )
             logger.info(f"User {telegram_id} activated FREE subscription via promo code")
             return ConversationHandler.END
@@ -802,7 +776,7 @@ async def autopilot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not db.is_subscription_active(telegram_id):
         await update.message.reply_text(
             "⚠️ You need an active subscription to use this feature.\n"
-            "Send /subscribe to get started!"
+            "Send /start to get started!"
         )
         return
 
@@ -2568,6 +2542,8 @@ async def handle_resume_upload(update: Update, context: ContextTypes.DEFAULT_TYP
 
 def main():
     """Start the bot"""
+    global application
+
     # Create application
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
@@ -2625,12 +2601,6 @@ def main():
         handle_post_callback,
         pattern='^(post_approve_|post_regenerate|post_discard|post_ai_generate|post_write_own|post_mobile|post_confirmed)'
     ))
-
-    # Custom post text input (must be before the generic settings text handler)
-    application.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND,
-        handle_custom_post_text
-    ), group=1)
 
     # Add callback handlers for schedule management
     application.add_handler(CallbackQueryHandler(

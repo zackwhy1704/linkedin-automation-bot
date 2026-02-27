@@ -10,7 +10,7 @@ fake-useragent==1.4.0
 anthropic>=0.18.0
 
 # Telegram Bot (ADDED)
-python-telegram-bot>=20.7
+python-telegram-bot[job-queue]>=20.7
 
 # Payment Processing (ADDED)
 stripe>=7.0.0
