@@ -2695,13 +2695,14 @@ def main():
             except Exception as e:
                 logger.error(f"Error sending screenshots to {telegram_id}: {e}")
 
-    # Schedule screenshot sender to run every 10 seconds
+    # Schedule screenshot sender and job scanner (requires python-telegram-bot[job-queue])
     job_queue = application.job_queue
-    job_queue.run_repeating(send_pending_screenshots, interval=10, first=10)
-
-    # Schedule hourly job scan for all opted-in users
-    job_queue.run_repeating(scan_jobs_for_all_users, interval=3600, first=300)
-    logger.info("Job scanner scheduled: runs every hour, first run in 5 minutes")
+    if job_queue:
+        job_queue.run_repeating(send_pending_screenshots, interval=10, first=10)
+        job_queue.run_repeating(scan_jobs_for_all_users, interval=3600, first=300)
+        logger.info("Job queue active: screenshot sender every 10s, job scanner every 1h")
+    else:
+        logger.warning("Job queue not available — install python-telegram-bot[job-queue] for scheduled tasks")
 
     # Start bot
     logger.info("LinkedInGrowthBot started!")
