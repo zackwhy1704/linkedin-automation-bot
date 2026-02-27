@@ -1,7 +1,8 @@
 # Environment variables (NEVER commit these)
 .env
+.env.production
+.env.docker
 credentials.env
-*.env
 
 # Python
 __pycache__/

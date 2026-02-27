@@ -1,0 +1,23 @@
+# Replace YOUR_DOMAIN with your actual domain (e.g., bot.yourdomain.com)
+# Caddy automatically provisions Let's Encrypt HTTPS certificates
+{$DOMAIN:localhost} {
+    # Stripe webhooks + payment pages
+    handle /webhook/* {
+        reverse_proxy payment:5000
+    }
+    handle /payment/* {
+        reverse_proxy payment:5000
+    }
+    handle /health {
+        reverse_proxy payment:5000
+    }
+
+    # Default: return 404 for anything else
+    handle {
+        respond "Not Found" 404
+    }
+
+    log {
+        output stdout
+    }
+}
