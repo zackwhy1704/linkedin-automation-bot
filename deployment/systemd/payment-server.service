@@ -1,0 +1,26 @@
+[Unit]
+Description=LinkedIn Bot - Payment Server (Stripe + Flask)
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=linkedin
+Group=linkedin
+WorkingDirectory=/home/linkedin/linkedin-automation-bot
+EnvironmentFile=/home/linkedin/linkedin-automation-bot/.env
+
+ExecStart=/home/linkedin/linkedin-automation-bot/venv/bin/python payment_server.py
+
+Restart=always
+RestartSec=10
+
+# Logging
+StandardOutput=append:/home/linkedin/linkedin-automation-bot/logs/payment-server.log
+StandardError=append:/home/linkedin/linkedin-automation-bot/logs/payment-server.log
+
+TimeoutStartSec=20
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target

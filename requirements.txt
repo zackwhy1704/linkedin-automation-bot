@@ -1,0 +1,49 @@
+# Core Dependencies
+selenium==4.16.0
+webdriver-manager==4.0.1
+schedule==1.2.1
+python-dotenv==1.0.0
+beautifulsoup4==4.12.3
+fake-useragent==1.4.0
+
+# AI Service
+anthropic>=0.18.0
+
+# Telegram Bot (ADDED)
+python-telegram-bot>=20.7
+
+# Payment Processing (ADDED)
+stripe>=7.0.0
+
+# Encryption (ADDED)
+cryptography>=41.0.0
+
+# PostgreSQL Database (ADDED)
+psycopg2-binary>=2.9.9
+
+# REST API (ADDED)
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.5.0
+
+# AWS Integration (ADDED)
+boto3>=1.34.0
+
+# Task Queue & Background Jobs (Multi-User Support)
+celery[redis]>=5.3.0
+redis>=5.0.0
+flower>=2.0.0
+kombu>=5.3.0
+
+# HTTP Client (for testing)
+aiohttp>=3.9.0
+
+# Payment Server
+Flask>=3.0.0
+
+# PDF Resume Parsing (job search feature)
+PyPDF2>=3.0.0
+
+# Facebook Bot (real estate lead generation)
+facebook-sdk>=3.1.0
+requests>=2.31.0

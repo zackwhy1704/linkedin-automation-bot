@@ -1,0 +1,23 @@
+[
+  {
+    "id": 1,
+    "content": "Excited to share my latest project! #coding #development",
+    "schedule_time": "2026-02-10 09:00:00",
+    "media": null,
+    "posted": true
+  },
+  {
+    "id": 2,
+    "content": "Just learned something amazing about Python automation. What's your favorite automation tool?",
+    "schedule_time": "2026-02-10 14:00:00",
+    "media": null,
+    "posted": false
+  },
+  {
+    "id": 3,
+    "content": "Happy to connect with fellow developers! Let's grow together. #networking #tech",
+    "schedule_time": "2026-02-11 10:00:00",
+    "media": null,
+    "posted": false
+  }
+]

@@ -1,0 +1,12 @@
+[
+  {
+    "name": "John Doe",
+    "profile_url": "https://www.linkedin.com/in/johndoe/",
+    "message": "Hi John, I noticed we share an interest in Python development. Would love to connect!"
+  },
+  {
+    "name": "Jane Smith",
+    "profile_url": "https://www.linkedin.com/in/janesmith/",
+    "message": "Hi Jane, I saw your post about web development. Great insights! Let's connect."
+  }
+]

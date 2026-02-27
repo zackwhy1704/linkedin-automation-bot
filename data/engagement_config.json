@@ -1,0 +1,34 @@
+{
+  "ai_config": {
+    "provider": "anthropic",
+    "model": "claude-opus-4-6",
+    "temperature": 0.7,
+    "max_tokens": 500,
+    "max_daily_calls": 100
+  },
+  "relevance_threshold": 0.5,
+  "hashtags_to_follow": [
+    "#python",
+    "#javascript",
+    "#webdevelopment",
+    "#ai",
+    "#machinelearning"
+  ],
+  "keywords_to_engage": [
+    "automation",
+    "programming",
+    "developer",
+    "software engineer"
+  ],
+  "engagement_preferences": {
+    "like_probability": 1.0,
+    "comment_probability": 1.0,
+    "generic_comments": [
+      "Great post!",
+      "Very insightful!",
+      "Thanks for sharing!",
+      "Interesting perspective!",
+      "Well said!"
+    ]
+  }
+}

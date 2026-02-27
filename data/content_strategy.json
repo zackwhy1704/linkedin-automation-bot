@@ -1,0 +1,30 @@
+{
+  "user_profile": {
+    "industry": ["software development","tech sales","AI"],
+    "skills": ["Python", "automation", "AI", "web development","selling","AI expert"],
+    "career_goals": ["senior developer role","technical sales","business development"],
+    "tone": ["professional yet approachable","AI enthusiast"],
+    "interests": ["technology", "programming", "career growth", "automation","AI"]
+  },
+  "content_themes": [
+    "building AI agents and what I learned from watching them reason",
+    "automating business workflows with plain English and markdown files",
+    "why clear writing is the most underrated programming skill in AI",
+    "a real project I built this week and the unexpected challenges",
+    "the future of work with AI agents and how to stay ahead",
+    "lessons from failing fast and iterating on automation tools",
+    "why most people are using AI wrong and what actually works",
+    "behind the scenes of building an AI-powered product from scratch",
+    "hot take on a trending AI or tech topic with personal experience",
+    "how AI is changing sales and business development right now"
+  ],
+  "posting_frequency": "daily",
+  "optimal_times": ["09:00", "13:00", "17:00"],
+  "content_goals": [
+    "position as a builder who ships real AI products",
+    "share authentic behind-the-scenes stories",
+    "spark conversations with contrarian takes on AI",
+    "attract recruiters, clients, and collaborators",
+    "build a reputation as someone who actually builds with AI, not just talks about it"
+  ]
+}

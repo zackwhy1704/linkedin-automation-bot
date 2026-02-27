@@ -1,0 +1,26 @@
+{
+  "generic_replies": [
+    "Thanks for your comment!",
+    "I appreciate your input!",
+    "Great point!",
+    "Thanks for sharing your thoughts!",
+    "Absolutely agree!"
+  ],
+  "question_replies": [
+    "That's a great question! Let me get back to you on that.",
+    "Interesting question! I'll share more details soon.",
+    "Thanks for asking! I'll elaborate on this in my next post."
+  ],
+  "positive_replies": [
+    "Thank you so much!",
+    "I really appreciate that!",
+    "Thanks for the kind words!",
+    "Glad you found it helpful!"
+  ],
+  "keyword_based": {
+    "great": "Thank you! Glad you liked it!",
+    "interesting": "Thanks! I'm happy you found it interesting!",
+    "helpful": "Glad I could help!",
+    "question": "Great question! Happy to discuss further."
+  }
+}

@@ -1,0 +1,28 @@
+[Unit]
+Description=LinkedIn Bot - Telegram Bot (Multi-User)
+After=network.target redis.service postgresql.service
+Wants=redis.service postgresql.service
+
+[Service]
+Type=simple
+User=linkedin
+Group=linkedin
+WorkingDirectory=/home/linkedin/linkedin-automation-bot/multiuser
+EnvironmentFile=/home/linkedin/linkedin-automation-bot/.env
+
+ExecStart=/home/linkedin/linkedin-automation-bot/venv/bin/python telegram_bot_multiuser.py
+
+# Restart on failure
+Restart=always
+RestartSec=10
+
+# Logging
+StandardOutput=append:/home/linkedin/linkedin-automation-bot/logs/telegram-bot.log
+StandardError=append:/home/linkedin/linkedin-automation-bot/logs/telegram-bot.log
+
+# Resource limits
+TimeoutStartSec=30
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

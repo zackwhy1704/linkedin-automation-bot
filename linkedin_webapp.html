@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Post to LinkedIn</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            background: var(--tg-theme-bg-color, #ffffff);
+            color: var(--tg-theme-text-color, #000000);
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            font-size: 24px;
+            margin-bottom: 20px;
+            color: var(--tg-theme-text-color);
+        }
+
+        .post-content {
+            background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            white-space: pre-wrap;
+            line-height: 1.6;
+            font-size: 16px;
+        }
+
+        .actions {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .btn {
+            padding: 16px;
+            border-radius: 12px;
+            border: none;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-decoration: none;
+            text-align: center;
+            display: block;
+        }
+
+        .btn-primary {
+            background: #0A66C2;
+            color: white;
+        }
+
+        .btn-primary:active {
+            background: #004182;
+        }
+
+        .btn-secondary {
+            background: var(--tg-theme-button-color, #0A66C2);
+            color: var(--tg-theme-button-text-color, white);
+        }
+
+        .btn-secondary:active {
+            opacity: 0.8;
+        }
+
+        .instructions {
+            background: #FFF4E6;
+            border-left: 4px solid #FF9800;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .instructions ol {
+            margin-left: 20px;
+            margin-top: 10px;
+        }
+
+        .instructions li {
+            margin-bottom: 8px;
+        }
+
+        .copy-btn {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .copy-btn:active {
+            background: #388E3C;
+        }
+
+        .success {
+            background: #4CAF50;
+            color: white;
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+            margin-top: 15px;
+            display: none;
+        }
+
+        .success.show {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📝 Post to LinkedIn</h1>
+
+        <div class="instructions">
+            <strong>How to post:</strong>
+            <ol>
+                <li>Copy the content below</li>
+                <li>Click "Open LinkedIn"</li>
+                <li>Click "Start a post" in LinkedIn</li>
+                <li>Paste the content</li>
+                <li>Click "Post"</li>
+            </ol>
+        </div>
+
+        <div class="post-content" id="postContent">
+            Loading post content...
+        </div>
+
+        <div class="actions">
+            <button class="btn copy-btn" onclick="copyToClipboard()">
+                📋 Copy Content
+            </button>
+
+            <a href="https://www.linkedin.com/feed/" class="btn btn-primary" target="_blank">
+                🔗 Open LinkedIn
+            </a>
+
+            <button class="btn btn-secondary" onclick="confirmPosted()">
+                ✅ I Posted It!
+            </button>
+        </div>
+
+        <div class="success" id="successMessage">
+            ✅ Great! Post confirmed. Returning to bot...
+        </div>
+    </div>
+
+    <script>
+        let tg = window.Telegram.WebApp;
+        tg.expand();
+
+        // Get post content from URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const postContent = urlParams.get('content') || decodeURIComponent(urlParams.get('text') || '');
+        const userId = urlParams.get('user_id');
+        const postId = urlParams.get('post_id');
+
+        // Display content
+        document.getElementById('postContent').textContent = postContent;
+
+        // Copy to clipboard function
+        function copyToClipboard() {
+            navigator.clipboard.writeText(postContent).then(() => {
+                const btn = event.target;
+                const originalText = btn.textContent;
+                btn.textContent = '✅ Copied!';
+                btn.style.background = '#4CAF50';
+
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.style.background = '';
+                }, 2000);
+
+                // Show haptic feedback
+                tg.HapticFeedback.notificationOccurred('success');
+            }).catch(err => {
+                console.error('Copy failed:', err);
+                tg.HapticFeedback.notificationOccurred('error');
+            });
+        }
+
+        // Confirm posted
+        function confirmPosted() {
+            // Send data back to bot
+            tg.sendData(JSON.stringify({
+                action: 'post_confirmed',
+                user_id: userId,
+                post_id: postId,
+                timestamp: new Date().toISOString()
+            }));
+
+            // Show success message
+            document.getElementById('successMessage').classList.add('show');
+
+            // Close WebApp after 2 seconds
+            setTimeout(() => {
+                tg.close();
+            }, 2000);
+        }
+
+        // Set up Telegram theme
+        document.documentElement.style.setProperty('--tg-theme-bg-color', tg.themeParams.bg_color || '#ffffff');
+        document.documentElement.style.setProperty('--tg-theme-text-color', tg.themeParams.text_color || '#000000');
+        document.documentElement.style.setProperty('--tg-theme-button-color', tg.themeParams.button_color || '#0A66C2');
+
+        tg.ready();
+    </script>
+</body>
+</html>

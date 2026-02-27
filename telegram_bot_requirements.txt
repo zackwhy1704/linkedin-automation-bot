@@ -1,0 +1,13 @@
+# Telegram Bot Requirements
+
+# Telegram Bot
+python-telegram-bot==20.7
+
+# Payment Processing
+stripe==8.0.0
+
+# Encryption
+cryptography==41.0.7
+
+# Async support
+asyncio

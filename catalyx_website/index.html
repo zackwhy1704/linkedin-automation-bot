@@ -1,0 +1,1639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Catalyx System - IT & Cybersecurity Solutions Singapore</title>
+  <meta name="description" content="Catalyx System provides integrated IT management and cybersecurity solutions for businesses in Singapore. Get a free quote today."/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Poppins:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+
+  <style>
+    /* ===================== RESET & BASE ===================== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: 'Inter', sans-serif;
+      color: #1a1a2e;
+      background: #fff;
+      overflow-x: hidden;
+    }
+
+    /* ===================== VARIABLES ===================== */
+    :root {
+      --primary: #0a2d6e;
+      --primary-dark: #061d4a;
+      --accent: #00b4d8;
+      --accent2: #0077b6;
+      --light-bg: #f0f6ff;
+      --text-dark: #1a1a2e;
+      --text-gray: #555;
+      --white: #ffffff;
+      --shadow: 0 4px 20px rgba(10, 45, 110, 0.12);
+      --shadow-hover: 0 8px 32px rgba(10, 45, 110, 0.22);
+    }
+
+    /* ===================== NAVBAR ===================== */
+    nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 999;
+      background: rgba(6, 29, 74, 0.97);
+      backdrop-filter: blur(10px);
+      padding: 0 40px;
+      height: 72px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 2px 20px rgba(0,0,0,0.3);
+    }
+
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+    }
+
+    .nav-logo-icon {
+      width: 42px;
+      height: 42px;
+      background: linear-gradient(135deg, #00b4d8, #0077b6);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      color: white;
+    }
+
+    .nav-logo-text {
+      color: #fff;
+      font-family: 'Poppins', sans-serif;
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+
+    .nav-logo-text span {
+      color: #00b4d8;
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 32px;
+      list-style: none;
+    }
+
+    .nav-links a {
+      color: rgba(255,255,255,0.85);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 500;
+      letter-spacing: 0.3px;
+      transition: color 0.2s;
+    }
+
+    .nav-links a:hover { color: #00b4d8; }
+
+    .nav-cta {
+      background: linear-gradient(135deg, #00b4d8, #0077b6);
+      color: white !important;
+      padding: 10px 22px;
+      border-radius: 6px;
+      font-weight: 600 !important;
+      transition: transform 0.2s, box-shadow 0.2s !important;
+    }
+
+    .nav-cta:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 15px rgba(0, 180, 216, 0.4);
+    }
+
+    .hamburger {
+      display: none;
+      flex-direction: column;
+      gap: 5px;
+      cursor: pointer;
+      padding: 5px;
+    }
+
+    .hamburger span {
+      display: block;
+      width: 25px;
+      height: 2px;
+      background: white;
+      transition: 0.3s;
+    }
+
+    /* ===================== HERO ===================== */
+    #hero {
+      min-height: 100vh;
+      background: linear-gradient(135deg, #061d4a 0%, #0a2d6e 50%, #0077b6 100%);
+      display: flex;
+      align-items: center;
+      padding: 100px 40px 60px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    #hero::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(circle at 20% 50%, rgba(0,180,216,0.15) 0%, transparent 60%),
+        radial-gradient(circle at 80% 20%, rgba(0,119,182,0.2) 0%, transparent 50%);
+    }
+
+    /* Animated grid lines */
+    #hero::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0,180,216,0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,180,216,0.05) 1px, transparent 1px);
+      background-size: 60px 60px;
+    }
+
+    .hero-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      width: 100%;
+      display: grid;
+      grid-template-columns: 1fr 420px;
+      gap: 60px;
+      align-items: center;
+      position: relative;
+      z-index: 1;
+    }
+
+    .hero-content h1 {
+      font-family: 'Poppins', sans-serif;
+      font-size: clamp(36px, 5vw, 58px);
+      font-weight: 800;
+      color: #fff;
+      line-height: 1.15;
+      margin-bottom: 20px;
+    }
+
+    .hero-content h1 span {
+      color: #00b4d8;
+      display: block;
+    }
+
+    .hero-content p {
+      font-size: 17px;
+      color: rgba(255,255,255,0.8);
+      line-height: 1.8;
+      margin-bottom: 32px;
+      max-width: 540px;
+    }
+
+    .hero-badges {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .hero-badge {
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(0,180,216,0.4);
+      padding: 8px 16px;
+      border-radius: 20px;
+      color: rgba(255,255,255,0.9);
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .hero-badge i { color: #00b4d8; }
+
+    /* Form Card */
+    .hero-form-card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 36px 32px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+
+    .hero-form-card h3 {
+      font-family: 'Poppins', sans-serif;
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--primary);
+      margin-bottom: 6px;
+    }
+
+    .hero-form-card p {
+      font-size: 13px;
+      color: var(--text-gray);
+      margin-bottom: 24px;
+    }
+
+    .form-group {
+      margin-bottom: 14px;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--primary);
+      margin-bottom: 5px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+      width: 100%;
+      padding: 11px 14px;
+      border: 1.5px solid #e0e8f5;
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: 'Inter', sans-serif;
+      color: var(--text-dark);
+      background: #f8faff;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      outline: none;
+    }
+
+    .form-group input:focus,
+    .form-group select:focus,
+    .form-group textarea:focus {
+      border-color: #00b4d8;
+      box-shadow: 0 0 0 3px rgba(0,180,216,0.1);
+      background: #fff;
+    }
+
+    .form-group select { cursor: pointer; }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .btn-submit {
+      width: 100%;
+      padding: 14px;
+      background: linear-gradient(135deg, #0a2d6e, #0077b6);
+      color: white;
+      font-size: 15px;
+      font-weight: 700;
+      font-family: 'Poppins', sans-serif;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: transform 0.2s, box-shadow 0.2s;
+      letter-spacing: 0.3px;
+    }
+
+    .btn-submit:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(10, 45, 110, 0.4);
+    }
+
+    .btn-submit.loading { opacity: 0.7; pointer-events: none; }
+
+    #form-success {
+      display: none;
+      text-align: center;
+      padding: 20px;
+      color: #0a2d6e;
+    }
+
+    #form-success i {
+      font-size: 48px;
+      color: #00b4d8;
+      margin-bottom: 12px;
+    }
+
+    #form-success h4 {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    /* ===================== SECTION BASE ===================== */
+    section { padding: 90px 40px; }
+    .container { max-width: 1200px; margin: 0 auto; }
+
+    .section-tag {
+      display: inline-block;
+      background: var(--light-bg);
+      color: var(--accent2);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      padding: 6px 14px;
+      border-radius: 20px;
+      margin-bottom: 14px;
+    }
+
+    .section-title {
+      font-family: 'Poppins', sans-serif;
+      font-size: clamp(28px, 4vw, 42px);
+      font-weight: 700;
+      color: var(--primary);
+      line-height: 1.25;
+      margin-bottom: 16px;
+    }
+
+    .section-subtitle {
+      font-size: 16px;
+      color: var(--text-gray);
+      line-height: 1.8;
+      max-width: 620px;
+    }
+
+    /* ===================== ABOUT ===================== */
+    #about { background: var(--light-bg); }
+
+    .about-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 70px;
+      align-items: center;
+    }
+
+    .about-visual {
+      position: relative;
+    }
+
+    .about-image-box {
+      background: linear-gradient(135deg, #0a2d6e, #0077b6);
+      border-radius: 20px;
+      padding: 50px 40px;
+      text-align: center;
+      color: white;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .about-image-box::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.05'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+    }
+
+    .about-icon-main {
+      font-size: 80px;
+      color: rgba(255,255,255,0.9);
+      margin-bottom: 16px;
+      display: block;
+    }
+
+    .about-image-box h3 {
+      font-family: 'Poppins', sans-serif;
+      font-size: 24px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .about-image-box p {
+      font-size: 14px;
+      opacity: 0.85;
+      line-height: 1.6;
+    }
+
+    .about-stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 16px;
+      margin-top: 20px;
+    }
+
+    .stat-card {
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 12px;
+      padding: 18px 12px;
+      text-align: center;
+    }
+
+    .stat-card .num {
+      font-family: 'Poppins', sans-serif;
+      font-size: 26px;
+      font-weight: 800;
+      color: #fff;
+      display: block;
+    }
+
+    .stat-card .label {
+      font-size: 11px;
+      opacity: 0.8;
+      margin-top: 4px;
+    }
+
+    .about-content .section-subtitle {
+      max-width: 100%;
+      margin-bottom: 28px;
+    }
+
+    .about-points {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .about-points li {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      font-size: 15px;
+      color: var(--text-gray);
+      line-height: 1.6;
+    }
+
+    .about-points li i {
+      color: var(--accent2);
+      font-size: 16px;
+      margin-top: 2px;
+      flex-shrink: 0;
+    }
+
+    /* ===================== VALUES ===================== */
+    #values { background: #fff; }
+
+    .values-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 28px;
+      margin-top: 48px;
+    }
+
+    .value-card {
+      border: 1.5px solid #e0e8f5;
+      border-radius: 16px;
+      padding: 36px 28px;
+      transition: transform 0.3s, box-shadow 0.3s, border-color 0.3s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .value-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 4px;
+      background: linear-gradient(90deg, #0a2d6e, #00b4d8);
+    }
+
+    .value-card:hover {
+      transform: translateY(-6px);
+      box-shadow: var(--shadow-hover);
+      border-color: #00b4d8;
+    }
+
+    .value-icon {
+      width: 60px;
+      height: 60px;
+      background: var(--light-bg);
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 26px;
+      color: var(--accent2);
+      margin-bottom: 20px;
+    }
+
+    .value-card h3 {
+      font-family: 'Poppins', sans-serif;
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--primary);
+      margin-bottom: 12px;
+    }
+
+    .value-card p {
+      font-size: 14px;
+      color: var(--text-gray);
+      line-height: 1.7;
+    }
+
+    /* ===================== SERVICES ===================== */
+    #services { background: var(--light-bg); }
+
+    .services-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      margin-bottom: 48px;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+
+    .services-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+    }
+
+    .service-card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 32px 28px;
+      box-shadow: var(--shadow);
+      transition: transform 0.3s, box-shadow 0.3s;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .service-card:hover {
+      transform: translateY(-5px);
+      box-shadow: var(--shadow-hover);
+    }
+
+    .service-card:nth-child(1) .service-icon { background: linear-gradient(135deg, #0a2d6e, #0077b6); }
+    .service-card:nth-child(2) .service-icon { background: linear-gradient(135deg, #00b4d8, #0096c7); }
+    .service-card:nth-child(3) .service-icon { background: linear-gradient(135deg, #0077b6, #023e8a); }
+    .service-card:nth-child(4) .service-icon { background: linear-gradient(135deg, #0096c7, #00b4d8); }
+    .service-card:nth-child(5) .service-icon { background: linear-gradient(135deg, #023e8a, #0a2d6e); }
+    .service-card:nth-child(6) .service-icon { background: linear-gradient(135deg, #0077b6, #00b4d8); }
+
+    .service-icon {
+      width: 56px;
+      height: 56px;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      color: white;
+      margin-bottom: 20px;
+    }
+
+    .service-card h3 {
+      font-family: 'Poppins', sans-serif;
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--primary);
+      margin-bottom: 10px;
+    }
+
+    .service-card p {
+      font-size: 13.5px;
+      color: var(--text-gray);
+      line-height: 1.7;
+      flex: 1;
+    }
+
+    .service-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 16px;
+    }
+
+    .service-tag {
+      background: var(--light-bg);
+      color: var(--accent2);
+      font-size: 11px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 20px;
+    }
+
+    /* ===================== WHY US ===================== */
+    #why { background: #fff; }
+
+    .why-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 60px;
+      align-items: center;
+    }
+
+    .why-visual {
+      background: linear-gradient(135deg, #061d4a 0%, #0a2d6e 100%);
+      border-radius: 20px;
+      padding: 50px 40px;
+      color: white;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .why-visual::after {
+      content: '';
+      position: absolute;
+      bottom: -40px;
+      right: -40px;
+      width: 200px;
+      height: 200px;
+      background: rgba(0,180,216,0.1);
+      border-radius: 50%;
+    }
+
+    .why-points {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .why-point {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+    }
+
+    .why-point-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      background: rgba(0,180,216,0.2);
+      border: 1px solid rgba(0,180,216,0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      color: #00b4d8;
+      flex-shrink: 0;
+    }
+
+    .why-point-text h4 {
+      font-family: 'Poppins', sans-serif;
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .why-point-text p {
+      font-size: 13px;
+      opacity: 0.75;
+      line-height: 1.6;
+    }
+
+    .why-content .section-subtitle { max-width: 100%; margin-bottom: 28px; }
+
+    .why-stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-top: 32px;
+    }
+
+    .why-stat {
+      background: var(--light-bg);
+      border-radius: 12px;
+      padding: 20px;
+      text-align: center;
+      border: 1.5px solid #e0e8f5;
+    }
+
+    .why-stat .num {
+      font-family: 'Poppins', sans-serif;
+      font-size: 28px;
+      font-weight: 800;
+      color: var(--primary);
+    }
+
+    .why-stat .label {
+      font-size: 12px;
+      color: var(--text-gray);
+      margin-top: 4px;
+    }
+
+    /* ===================== CTA ===================== */
+    #cta {
+      background: linear-gradient(135deg, #0a2d6e 0%, #0077b6 50%, #00b4d8 100%);
+      padding: 90px 40px;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    #cta::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(circle at 30% 50%, rgba(255,255,255,0.05) 0%, transparent 60%),
+        radial-gradient(circle at 70% 50%, rgba(255,255,255,0.05) 0%, transparent 60%);
+    }
+
+    .cta-inner {
+      position: relative;
+      z-index: 1;
+      max-width: 700px;
+      margin: 0 auto;
+    }
+
+    #cta h2 {
+      font-family: 'Poppins', sans-serif;
+      font-size: clamp(28px, 4vw, 44px);
+      font-weight: 800;
+      color: #fff;
+      margin-bottom: 16px;
+      line-height: 1.2;
+    }
+
+    #cta p {
+      font-size: 17px;
+      color: rgba(255,255,255,0.85);
+      margin-bottom: 36px;
+      line-height: 1.7;
+    }
+
+    .cta-buttons {
+      display: flex;
+      gap: 16px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .btn-primary {
+      background: #fff;
+      color: var(--primary);
+      padding: 15px 32px;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 700;
+      font-family: 'Poppins', sans-serif;
+      text-decoration: none;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+    }
+
+    .btn-outline {
+      border: 2px solid rgba(255,255,255,0.6);
+      color: #fff;
+      padding: 13px 32px;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      font-family: 'Poppins', sans-serif;
+      text-decoration: none;
+      transition: background 0.2s, border-color 0.2s;
+    }
+
+    .btn-outline:hover {
+      background: rgba(255,255,255,0.1);
+      border-color: #fff;
+    }
+
+    /* ===================== CONTACT SECTION ===================== */
+    #contact { background: var(--light-bg); }
+
+    .contact-grid {
+      display: grid;
+      grid-template-columns: 1fr 1.3fr;
+      gap: 60px;
+      align-items: start;
+    }
+
+    .contact-info h3 {
+      font-family: 'Poppins', sans-serif;
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--primary);
+      margin-bottom: 12px;
+    }
+
+    .contact-info p {
+      font-size: 15px;
+      color: var(--text-gray);
+      line-height: 1.8;
+      margin-bottom: 32px;
+    }
+
+    .contact-items {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .contact-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+    }
+
+    .contact-item-icon {
+      width: 48px;
+      height: 48px;
+      background: var(--primary);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      color: white;
+      flex-shrink: 0;
+    }
+
+    .contact-item-text strong {
+      display: block;
+      font-weight: 600;
+      color: var(--primary);
+      margin-bottom: 3px;
+      font-size: 14px;
+    }
+
+    .contact-item-text span, .contact-item-text a {
+      font-size: 15px;
+      color: var(--text-gray);
+      text-decoration: none;
+    }
+
+    .contact-item-text a:hover { color: var(--accent2); }
+
+    .contact-form-box {
+      background: #fff;
+      border-radius: 16px;
+      padding: 40px;
+      box-shadow: var(--shadow);
+    }
+
+    .contact-form-box h3 {
+      font-family: 'Poppins', sans-serif;
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--primary);
+      margin-bottom: 24px;
+    }
+
+    /* ===================== FOOTER ===================== */
+    footer {
+      background: #061d4a;
+      color: rgba(255,255,255,0.75);
+      padding: 60px 40px 30px;
+    }
+
+    .footer-grid {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1.5fr 1fr 1fr;
+      gap: 50px;
+      padding-bottom: 40px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .footer-brand .nav-logo { margin-bottom: 16px; display: inline-flex; }
+    .footer-brand p {
+      font-size: 14px;
+      line-height: 1.8;
+      color: rgba(255,255,255,0.6);
+      margin-bottom: 20px;
+    }
+
+    .footer-social {
+      display: flex;
+      gap: 12px;
+    }
+
+    .footer-social a {
+      width: 36px;
+      height: 36px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: rgba(255,255,255,0.7);
+      font-size: 16px;
+      text-decoration: none;
+      transition: background 0.2s, color 0.2s;
+    }
+
+    .footer-social a:hover { background: #00b4d8; color: #fff; }
+
+    .footer-col h4 {
+      font-family: 'Poppins', sans-serif;
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 20px;
+    }
+
+    .footer-links {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .footer-links li a {
+      color: rgba(255,255,255,0.6);
+      text-decoration: none;
+      font-size: 14px;
+      transition: color 0.2s;
+    }
+
+    .footer-links li a:hover { color: #00b4d8; }
+
+    .footer-contact-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .footer-contact-list li {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+      color: rgba(255,255,255,0.6);
+    }
+
+    .footer-contact-list li i { color: #00b4d8; font-size: 14px; }
+    .footer-contact-list li a { color: rgba(255,255,255,0.6); text-decoration: none; }
+    .footer-contact-list li a:hover { color: #00b4d8; }
+
+    .footer-bottom {
+      max-width: 1200px;
+      margin: 24px auto 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .footer-bottom p { font-size: 13px; color: rgba(255,255,255,0.45); }
+
+    /* ===================== RESPONSIVE ===================== */
+    @media (max-width: 1024px) {
+      .services-grid { grid-template-columns: 1fr 1fr; }
+    }
+
+    @media (max-width: 768px) {
+      nav { padding: 0 20px; }
+      .nav-links { display: none; }
+      .nav-links.open {
+        display: flex;
+        flex-direction: column;
+        position: fixed;
+        top: 72px; left: 0; right: 0;
+        background: #061d4a;
+        padding: 24px;
+        gap: 20px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+      }
+      .hamburger { display: flex; }
+
+      #hero { padding: 100px 20px 50px; }
+      .hero-inner { grid-template-columns: 1fr; gap: 40px; }
+      .hero-content h1 { font-size: 32px; }
+      .hero-form-card { padding: 28px 20px; }
+
+      section { padding: 60px 20px; }
+      .about-grid, .why-grid, .contact-grid { grid-template-columns: 1fr; gap: 40px; }
+      .values-grid, .services-grid { grid-template-columns: 1fr; }
+      .form-row { grid-template-columns: 1fr; }
+      .footer-grid { grid-template-columns: 1fr; gap: 30px; }
+      .footer-bottom { flex-direction: column; text-align: center; }
+      .why-stats { grid-template-columns: 1fr 1fr; }
+    }
+
+    /* ===================== MISC ===================== */
+    .divider {
+      width: 60px;
+      height: 4px;
+      background: linear-gradient(90deg, #0a2d6e, #00b4d8);
+      border-radius: 2px;
+      margin: 16px 0 20px;
+    }
+
+    .notification {
+      display: none;
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: #fff;
+      border-left: 4px solid #00b4d8;
+      border-radius: 8px;
+      padding: 16px 20px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+      z-index: 9999;
+      font-size: 14px;
+      color: var(--primary);
+      max-width: 320px;
+    }
+
+    .notification.show { display: block; animation: slideIn 0.3s ease; }
+
+    @keyframes slideIn {
+      from { transform: translateX(100px); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+  </style>
+</head>
+
+<body>
+
+<!-- ===================== NAVBAR ===================== -->
+<nav id="navbar">
+  <a href="#hero" class="nav-logo">
+    <div class="nav-logo-icon"><i class="fas fa-shield-halved"></i></div>
+    <span class="nav-logo-text">Catalyx <span>System</span></span>
+  </a>
+
+  <ul class="nav-links" id="navLinks">
+    <li><a href="#about">About</a></li>
+    <li><a href="#services">Services</a></li>
+    <li><a href="#why">Why Us</a></li>
+    <li><a href="#contact">Contact</a></li>
+    <li><a href="#hero" class="nav-cta">Get Free Quote</a></li>
+  </ul>
+
+  <div class="hamburger" id="hamburger" onclick="toggleMenu()">
+    <span></span><span></span><span></span>
+  </div>
+</nav>
+
+<!-- ===================== HERO ===================== -->
+<section id="hero">
+  <div class="hero-inner">
+    <div class="hero-content">
+      <div class="section-tag"><i class="fas fa-shield-halved"></i> &nbsp;Trusted IT Partner</div>
+      <h1>Protect &amp; Power<span>Your Business</span>with Smart IT</h1>
+      <p>Catalyx System delivers integrated IT management and cybersecurity solutions for businesses across Singapore. From infrastructure to compliance — we've got you covered.</p>
+      <div class="hero-badges">
+        <div class="hero-badge"><i class="fas fa-check-circle"></i> PDPA Compliant</div>
+        <div class="hero-badge"><i class="fas fa-check-circle"></i> 24/7 Support</div>
+        <div class="hero-badge"><i class="fas fa-check-circle"></i> Enterprise-Grade</div>
+      </div>
+    </div>
+
+    <div class="hero-form-card">
+      <h3>Get a Free Quote</h3>
+      <p>Tell us about your needs and we'll respond within 24 hours</p>
+
+      <div id="quote-form">
+        <form id="heroForm">
+          <div class="form-row">
+            <div class="form-group">
+              <label>First Name</label>
+              <input type="text" name="first_name" placeholder="John" required/>
+            </div>
+            <div class="form-group">
+              <label>Last Name</label>
+              <input type="text" name="last_name" placeholder="Doe"/>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Work Email</label>
+            <input type="email" name="email" placeholder="john@company.com" required/>
+          </div>
+          <div class="form-group">
+            <label>Contact Number</label>
+            <input type="tel" name="phone" placeholder="+65 XXXX XXXX" required/>
+          </div>
+          <div class="form-group">
+            <label>Company Name</label>
+            <input type="text" name="company" placeholder="Your Company Pte Ltd"/>
+          </div>
+          <div class="form-group">
+            <label>Industry</label>
+            <select name="industry">
+              <option value="">Select your industry</option>
+              <option>Manufacturing</option>
+              <option>Healthcare</option>
+              <option>Finance &amp; Fintech</option>
+              <option>Retail &amp; E-Commerce</option>
+              <option>Education</option>
+              <option>Real Estate</option>
+              <option>Logistics &amp; Transportation</option>
+              <option>ICT &amp; Tech</option>
+              <option>Construction</option>
+              <option>Food &amp; Beverage</option>
+              <option>Professional Services</option>
+              <option>Other</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Service Needed</label>
+            <select name="service">
+              <option value="">Select a service</option>
+              <option>Cybersecurity Solutions</option>
+              <option>IT Infrastructure Setup</option>
+              <option>Data Backup &amp; Recovery</option>
+              <option>PDPA / Compliance Support</option>
+              <option>Remote IT Support</option>
+              <option>Cloud Migration</option>
+              <option>CCTV &amp; Access Control</option>
+              <option>General IT Consultation</option>
+            </select>
+          </div>
+          <button type="submit" class="btn-submit" id="heroSubmitBtn">
+            <i class="fas fa-paper-plane"></i> &nbsp;Send My Request
+          </button>
+        </form>
+      </div>
+
+      <div id="form-success">
+        <i class="fas fa-circle-check"></i>
+        <h4>Request Sent!</h4>
+        <p>Thank you! We'll be in touch within 24 hours.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== ABOUT ===================== -->
+<section id="about">
+  <div class="container">
+    <div class="about-grid">
+      <div class="about-visual">
+        <div class="about-image-box">
+          <i class="fas fa-shield-halved about-icon-main"></i>
+          <h3>Catalyx System</h3>
+          <p>Your trusted partner in IT security and digital transformation</p>
+          <div class="about-stats">
+            <div class="stat-card">
+              <span class="num">50+</span>
+              <span class="label">Clients Served</span>
+            </div>
+            <div class="stat-card">
+              <span class="num">3</span>
+              <span class="label">Core Values</span>
+            </div>
+            <div class="stat-card">
+              <span class="num">24/7</span>
+              <span class="label">Support</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="about-content">
+        <div class="section-tag">Who We Are</div>
+        <h2 class="section-title">Discover Catalyx System</h2>
+        <div class="divider"></div>
+        <p class="section-subtitle">
+          Catalyx System is a Singapore-based IT solutions provider with a team of highly experienced consultants dedicated to keeping businesses secure, efficient, and future-ready. We combine cybersecurity expertise with hands-on IT management to deliver comprehensive protection tailored for SMEs and enterprises alike.
+        </p>
+        <ul class="about-points">
+          <li><i class="fas fa-check-circle"></i> Integrated cybersecurity and IT support under one roof</li>
+          <li><i class="fas fa-check-circle"></i> Transparent, end-to-end data security and compliance</li>
+          <li><i class="fas fa-check-circle"></i> Proactive monitoring — we find threats before they find you</li>
+          <li><i class="fas fa-check-circle"></i> Enterprise-grade defence accessible for SMEs</li>
+          <li><i class="fas fa-check-circle"></i> PDPA-aligned processes and governance support</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== CORE VALUES ===================== -->
+<section id="values">
+  <div class="container">
+    <div style="text-align:center; margin-bottom:0;">
+      <div class="section-tag" style="margin-bottom:14px;">Our Approach</div>
+      <h2 class="section-title" style="margin:0 auto 12px;">Three Pillars of Our Service</h2>
+      <p class="section-subtitle" style="margin:0 auto;">Everything we do is built on these core commitments to your business</p>
+    </div>
+    <div class="values-grid">
+      <div class="value-card">
+        <div class="value-icon"><i class="fas fa-layer-group"></i></div>
+        <h3>Integrated Data Protection &amp; IT Management</h3>
+        <p>We combine cybersecurity and IT support into one streamlined service, removing the complexity of managing multiple vendors. One team, one point of contact, complete coverage.</p>
+      </div>
+      <div class="value-card">
+        <div class="value-icon"><i class="fas fa-eye"></i></div>
+        <h3>Transparent End-to-End Security</h3>
+        <p>From initial risk assessment through to incident recovery, we maintain full visibility at every step. No black boxes — you always know what's protecting your business and why.</p>
+      </div>
+      <div class="value-card">
+        <div class="value-icon"><i class="fas fa-lock"></i></div>
+        <h3>Trusted &amp; Proactive Protection</h3>
+        <p>We don't wait for threats — we hunt them. Our proactive monitoring and in-house management deliver enterprise-level defence designed to work for businesses of any size.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== SERVICES ===================== -->
+<section id="services">
+  <div class="container">
+    <div class="services-header">
+      <div>
+        <div class="section-tag">What We Offer</div>
+        <h2 class="section-title" style="margin:10px 0 0;">Our Services</h2>
+      </div>
+      <a href="#contact" class="btn-primary" style="background:var(--primary); color:#fff; white-space:nowrap;">View All Services</a>
+    </div>
+    <div class="services-grid">
+      <div class="service-card">
+        <div class="service-icon"><i class="fas fa-desktop"></i></div>
+        <h3>IT Hardware &amp; Software Solutions</h3>
+        <p>Complete hardware procurement, software licensing, antivirus, firewalls, intrusion detection, patch management, and DLP solutions tailored to your environment.</p>
+        <div class="service-tags">
+          <span class="service-tag">Antivirus</span>
+          <span class="service-tag">Firewall</span>
+          <span class="service-tag">Patch Mgmt</span>
+        </div>
+      </div>
+      <div class="service-card">
+        <div class="service-icon"><i class="fas fa-cloud-arrow-up"></i></div>
+        <h3>Data Backup &amp; Recovery</h3>
+        <p>Cloud-based backup solutions compatible with Microsoft 365 and Google Workspace, ensuring your critical data is always recoverable with minimal downtime.</p>
+        <div class="service-tags">
+          <span class="service-tag">Cloud Backup</span>
+          <span class="service-tag">M365</span>
+          <span class="service-tag">Disaster Recovery</span>
+        </div>
+      </div>
+      <div class="service-card">
+        <div class="service-icon"><i class="fas fa-gavel"></i></div>
+        <h3>Governance &amp; Compliance Support</h3>
+        <p>PDPA-aligned data governance, DPMP training, and compliance audits to ensure your business meets Singapore's regulatory requirements confidently.</p>
+        <div class="service-tags">
+          <span class="service-tag">PDPA</span>
+          <span class="service-tag">DPMP</span>
+          <span class="service-tag">Audit</span>
+        </div>
+      </div>
+      <div class="service-card">
+        <div class="service-icon"><i class="fas fa-headset"></i></div>
+        <h3>Remote IT Support &amp; Maintenance</h3>
+        <p>24/7 remote helpdesk, proactive system monitoring, scheduled maintenance, and rapid incident response to keep your operations running smoothly at all times.</p>
+        <div class="service-tags">
+          <span class="service-tag">24/7 Support</span>
+          <span class="service-tag">Monitoring</span>
+          <span class="service-tag">Helpdesk</span>
+        </div>
+      </div>
+      <div class="service-card">
+        <div class="service-icon"><i class="fas fa-camera"></i></div>
+        <h3>CCTV &amp; Door Access Control</h3>
+        <p>Physical security solutions including IP CCTV systems, smart door access control, and integrated security monitoring for your premises.</p>
+        <div class="service-tags">
+          <span class="service-tag">IP CCTV</span>
+          <span class="service-tag">Access Control</span>
+          <span class="service-tag">Monitoring</span>
+        </div>
+      </div>
+      <div class="service-card">
+        <div class="service-icon"><i class="fas fa-network-wired"></i></div>
+        <h3>Startup &amp; Office IT Setup</h3>
+        <p>End-to-end IT infrastructure setup for new offices and startups — networking, workstations, servers, VPN, email, and everything you need to launch securely.</p>
+        <div class="service-tags">
+          <span class="service-tag">Networking</span>
+          <span class="service-tag">VPN</span>
+          <span class="service-tag">Office Setup</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== WHY US ===================== -->
+<section id="why">
+  <div class="container">
+    <div class="why-grid">
+      <div class="why-visual">
+        <ul class="why-points">
+          <li class="why-point">
+            <div class="why-point-icon"><i class="fas fa-user-shield"></i></div>
+            <div class="why-point-text">
+              <h4>Experienced IT Consultants</h4>
+              <p>Our team brings deep expertise across cybersecurity, infrastructure, and compliance — ready to handle any challenge.</p>
+            </div>
+          </li>
+          <li class="why-point">
+            <div class="why-point-icon"><i class="fas fa-bolt"></i></div>
+            <div class="why-point-text">
+              <h4>Fast Response Time</h4>
+              <p>When issues arise, we respond immediately. Our 24/7 support means your downtime is minimised and operations restored fast.</p>
+            </div>
+          </li>
+          <li class="why-point">
+            <div class="why-point-icon"><i class="fas fa-handshake"></i></div>
+            <div class="why-point-text">
+              <h4>Long-Term Partnership</h4>
+              <p>We don't just fix problems and leave. We build lasting relationships, evolving your IT strategy as your business grows.</p>
+            </div>
+          </li>
+          <li class="why-point">
+            <div class="why-point-icon"><i class="fas fa-dollar-sign"></i></div>
+            <div class="why-point-text">
+              <h4>Cost-Effective Solutions</h4>
+              <p>Enterprise-level security and IT management at prices designed for SMEs. No hidden fees, transparent billing.</p>
+            </div>
+          </li>
+        </ul>
+      </div>
+
+      <div class="why-content">
+        <div class="section-tag">Why Catalyx System</div>
+        <h2 class="section-title">Your Security Is Our Priority</h2>
+        <div class="divider"></div>
+        <p class="section-subtitle">
+          Choosing Catalyx System means choosing a partner who treats your business like their own. We combine technical excellence with genuine care for your success — delivering solutions that are robust, scalable, and built to last.
+        </p>
+        <div class="why-stats">
+          <div class="why-stat">
+            <div class="num">50+</div>
+            <div class="label">Happy Clients</div>
+          </div>
+          <div class="why-stat">
+            <div class="num">99.9%</div>
+            <div class="label">Uptime Delivered</div>
+          </div>
+          <div class="why-stat">
+            <div class="num">&lt;1hr</div>
+            <div class="label">Avg Response Time</div>
+          </div>
+          <div class="why-stat">
+            <div class="num">100%</div>
+            <div class="label">Client Retention</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== CTA BANNER ===================== -->
+<section id="cta">
+  <div class="cta-inner">
+    <h2>Keep Your System Protected Now!</h2>
+    <p>Don't wait for a breach to take action. Get a free cybersecurity assessment and IT consultation today — no commitment required.</p>
+    <div class="cta-buttons">
+      <a href="#hero" class="btn-primary">Get Free Quote</a>
+      <a href="mailto:admin@catalyx.asia" class="btn-outline">Email Us Directly</a>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== CONTACT ===================== -->
+<section id="contact">
+  <div class="container">
+    <div class="contact-grid">
+      <div class="contact-info">
+        <div class="section-tag">Get In Touch</div>
+        <h3>Contact Catalyx System</h3>
+        <div class="divider"></div>
+        <p>Have questions or ready to get started? Reach out to us and our team will get back to you within 24 hours.</p>
+        <div class="contact-items">
+          <div class="contact-item">
+            <div class="contact-item-icon"><i class="fas fa-envelope"></i></div>
+            <div class="contact-item-text">
+              <strong>Email Us</strong>
+              <a href="mailto:admin@catalyx.asia">admin@catalyx.asia</a>
+            </div>
+          </div>
+          <div class="contact-item">
+            <div class="contact-item-icon"><i class="fas fa-phone"></i></div>
+            <div class="contact-item-text">
+              <strong>Call Us</strong>
+              <a href="tel:+6580409026">+65 8040 9026</a>
+            </div>
+          </div>
+          <div class="contact-item">
+            <div class="contact-item-icon"><i class="fas fa-clock"></i></div>
+            <div class="contact-item-text">
+              <strong>Business Hours</strong>
+              <span>Mon – Fri: 9am – 6pm SGT</span>
+            </div>
+          </div>
+          <div class="contact-item">
+            <div class="contact-item-icon"><i class="fab fa-whatsapp"></i></div>
+            <div class="contact-item-text">
+              <strong>WhatsApp</strong>
+              <a href="https://wa.me/6580409026" target="_blank">Chat on WhatsApp</a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="contact-form-box">
+        <h3>Send Us a Message</h3>
+        <form id="contactForm">
+          <div class="form-row">
+            <div class="form-group">
+              <label>First Name</label>
+              <input type="text" name="first_name" placeholder="John" required/>
+            </div>
+            <div class="form-group">
+              <label>Last Name</label>
+              <input type="text" name="last_name" placeholder="Doe"/>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Email</label>
+            <input type="email" name="email" placeholder="john@company.com" required/>
+          </div>
+          <div class="form-group">
+            <label>Phone Number</label>
+            <input type="tel" name="phone" placeholder="+65 XXXX XXXX"/>
+          </div>
+          <div class="form-group">
+            <label>Message</label>
+            <textarea name="message" rows="4" placeholder="Tell us how we can help..." style="resize:vertical;"></textarea>
+          </div>
+          <button type="submit" class="btn-submit" id="contactSubmitBtn">
+            <i class="fas fa-paper-plane"></i> &nbsp;Send Message
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== FOOTER ===================== -->
+<footer>
+  <div class="footer-grid">
+    <div class="footer-brand">
+      <a href="#hero" class="nav-logo">
+        <div class="nav-logo-icon"><i class="fas fa-shield-halved"></i></div>
+        <span class="nav-logo-text">Catalyx <span>System</span></span>
+      </a>
+      <p>Integrated IT management and cybersecurity solutions for businesses across Singapore. Protecting what matters most.</p>
+      <div class="footer-social">
+        <a href="#" title="LinkedIn"><i class="fab fa-linkedin-in"></i></a>
+        <a href="#" title="Facebook"><i class="fab fa-facebook-f"></i></a>
+        <a href="https://wa.me/6580409026" title="WhatsApp"><i class="fab fa-whatsapp"></i></a>
+        <a href="mailto:admin@catalyx.asia" title="Email"><i class="fas fa-envelope"></i></a>
+      </div>
+    </div>
+
+    <div class="footer-col">
+      <h4>Services</h4>
+      <ul class="footer-links">
+        <li><a href="#services">IT Hardware &amp; Software</a></li>
+        <li><a href="#services">Data Backup &amp; Recovery</a></li>
+        <li><a href="#services">Governance &amp; Compliance</a></li>
+        <li><a href="#services">Remote IT Support</a></li>
+        <li><a href="#services">CCTV &amp; Access Control</a></li>
+        <li><a href="#services">Office IT Setup</a></li>
+      </ul>
+    </div>
+
+    <div class="footer-col">
+      <h4>Contact</h4>
+      <ul class="footer-contact-list">
+        <li><i class="fas fa-envelope"></i> <a href="mailto:admin@catalyx.asia">admin@catalyx.asia</a></li>
+        <li><i class="fas fa-phone"></i> <a href="tel:+6580409026">+65 8040 9026</a></li>
+        <li><i class="fab fa-whatsapp"></i> <a href="https://wa.me/6580409026">WhatsApp Us</a></li>
+        <li><i class="fas fa-globe"></i> <span>catalyx.asia</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="footer-bottom">
+    <p>© 2026 Catalyx System. All rights reserved.</p>
+    <p>Designed for businesses that demand the best in IT security.</p>
+  </div>
+</footer>
+
+<!-- Toast notification -->
+<div class="notification" id="notification">
+  <i class="fas fa-check-circle" style="color:#00b4d8; margin-right:8px;"></i>
+  <span id="notification-text">Message sent successfully!</span>
+</div>
+
+<!-- ===================== SCRIPTS ===================== -->
+<script>
+  // Mobile menu
+  function toggleMenu() {
+    document.getElementById('navLinks').classList.toggle('open');
+  }
+
+  // Close menu on nav link click
+  document.querySelectorAll('.nav-links a').forEach(link => {
+    link.addEventListener('click', () => {
+      document.getElementById('navLinks').classList.remove('open');
+    });
+  });
+
+  // Notification helper
+  function showNotification(msg, isError = false) {
+    const el = document.getElementById('notification');
+    const text = document.getElementById('notification-text');
+    text.textContent = msg;
+    el.style.borderLeftColor = isError ? '#e53e3e' : '#00b4d8';
+    el.classList.add('show');
+    setTimeout(() => el.classList.remove('show'), 5000);
+  }
+
+  // ---- Hero Form ----
+  document.getElementById('heroForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const btn = document.getElementById('heroSubmitBtn');
+    btn.textContent = 'Sending...';
+    btn.classList.add('loading');
+
+    const data = {
+      source: 'Hero Form - Get Free Quote',
+      first_name: this.first_name.value,
+      last_name: this.last_name.value,
+      email: this.email.value,
+      phone: this.phone.value,
+      company: this.company.value,
+      industry: this.industry.value,
+      service: this.service.value,
+    };
+
+    try {
+      const res = await fetch('https://formsubmit.co/ajax/admin@catalyx.asia', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({
+          _subject: `[Catalyx System] New Quote Request from ${data.first_name} ${data.last_name}`,
+          _template: 'table',
+          _captcha: 'false',
+          ...data
+        })
+      });
+
+      if (res.ok) {
+        document.getElementById('quote-form').style.display = 'none';
+        document.getElementById('form-success').style.display = 'block';
+      } else {
+        throw new Error('Failed');
+      }
+    } catch {
+      btn.textContent = 'Send My Request';
+      btn.classList.remove('loading');
+      showNotification('Something went wrong. Please email us at admin@catalyx.asia', true);
+    }
+  });
+
+  // ---- Contact Form ----
+  document.getElementById('contactForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const btn = document.getElementById('contactSubmitBtn');
+    btn.textContent = 'Sending...';
+    btn.classList.add('loading');
+
+    const data = {
+      source: 'Contact Form',
+      first_name: this.first_name.value,
+      last_name: this.last_name.value,
+      email: this.email.value,
+      phone: this.phone.value,
+      message: this.message.value,
+    };
+
+    try {
+      const res = await fetch('https://formsubmit.co/ajax/admin@catalyx.asia', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({
+          _subject: `[Catalyx System] New Message from ${data.first_name} ${data.last_name}`,
+          _template: 'table',
+          _captcha: 'false',
+          ...data
+        })
+      });
+
+      if (res.ok) {
+        this.reset();
+        showNotification('Message sent! We\'ll reply within 24 hours.');
+        btn.textContent = 'Send Message';
+        btn.classList.remove('loading');
+      } else {
+        throw new Error('Failed');
+      }
+    } catch {
+      btn.textContent = 'Send Message';
+      btn.classList.remove('loading');
+      showNotification('Something went wrong. Please email us directly.', true);
+    }
+  });
+
+  // Smooth scroll offset for fixed nav
+  document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+    anchor.addEventListener('click', function(e) {
+      const target = document.querySelector(this.getAttribute('href'));
+      if (target) {
+        e.preventDefault();
+        const offset = 80;
+        window.scrollTo({ top: target.offsetTop - offset, behavior: 'smooth' });
+      }
+    });
+  });
+
+  // Navbar scroll effect
+  window.addEventListener('scroll', () => {
+    const nav = document.getElementById('navbar');
+    if (window.scrollY > 50) {
+      nav.style.boxShadow = '0 4px 30px rgba(0,0,0,0.4)';
+    } else {
+      nav.style.boxShadow = '0 2px 20px rgba(0,0,0,0.3)';
+    }
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,36 @@
+[Unit]
+Description=LinkedIn Bot - Celery Worker (Browser Automation)
+After=network.target redis.service postgresql.service
+Wants=redis.service postgresql.service
+
+[Service]
+Type=simple
+User=linkedin
+Group=linkedin
+WorkingDirectory=/home/linkedin/linkedin-automation-bot
+EnvironmentFile=/home/linkedin/linkedin-automation-bot/.env
+
+# 3 concurrent workers — each handles one LinkedIn task (Chrome instance)
+# Increase --concurrency to handle more simultaneous users
+# Rule of thumb: 1 worker per ~1.5GB available RAM
+# CX32 (8GB) → safe max is 5; leave headroom for OS+Redis+Postgres
+ExecStart=/home/linkedin/linkedin-automation-bot/venv/bin/celery \
+    -A celery_app worker \
+    --loglevel=info \
+    --concurrency=3 \
+    --max-tasks-per-child=50 \
+    --hostname=worker1@%h \
+    -Q posting,engagement,connections,job_search,notifications
+
+Restart=always
+RestartSec=15
+
+# Give Chrome time to clean up on stop
+TimeoutStopSec=60
+
+# Logging
+StandardOutput=append:/home/linkedin/linkedin-automation-bot/logs/celery-worker.log
+StandardError=append:/home/linkedin/linkedin-automation-bot/logs/celery-worker.log
+
+[Install]
+WantedBy=multi-user.target

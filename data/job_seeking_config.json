@@ -1,0 +1,50 @@
+{
+  "enabled": true,
+  "target_roles": [
+    "Software Engineer",
+    "Python Developer",
+    "Backend Developer",
+    "Full Stack Developer",
+    "AI Engineer"
+  ],
+  "target_locations": [
+    "United States",
+    "Remote",
+    "San Francisco",
+    "New York",
+    "Seattle"
+  ],
+  "target_companies": [
+    "tech",
+    "startup",
+    "saas",
+    "software",
+    "technology"
+  ],
+  "avoid_companies": [],
+  "target_company_sizes": [
+    "startup",
+    "mid-size",
+    "enterprise"
+  ],
+  "outreach_limits": {
+    "recruiters_per_day": 10,
+    "connection_requests_per_day": 15,
+    "messages_per_day": 10
+  },
+  "engagement_strategy": {
+    "prioritize_recruiters": true,
+    "engage_with_job_posts": true,
+    "target_hiring_managers": true,
+    "follow_target_companies": true
+  },
+  "keywords_to_track": [
+    "hiring",
+    "we're hiring",
+    "looking for",
+    "join our team",
+    "open position",
+    "job opportunity",
+    "now hiring"
+  ]
+}
