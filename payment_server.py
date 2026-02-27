@@ -24,6 +24,11 @@ app = Flask(__name__, static_folder='static', template_folder='static')
 stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
 STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET')
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+PAYMENT_SERVER_URL = os.getenv('PAYMENT_SERVER_URL', 'http://localhost:5000')
+
+if not STRIPE_WEBHOOK_SECRET or STRIPE_WEBHOOK_SECRET.startswith('whsec_REPLACE'):
+    logger.warning("STRIPE_WEBHOOK_SECRET is not configured! Webhook signature verification will fail.")
+    logger.warning("Get your webhook secret from: Stripe Dashboard → Developers → Webhooks")
 
 db = BotDatabase()
 
@@ -274,6 +279,7 @@ def health():
 if __name__ == '__main__':
     port = int(os.getenv('PAYMENT_SERVER_PORT', 5000))
     print(f"Payment server starting on port {port}...")
-    print(f"Success URL: http://localhost:{port}/payment/success")
-    print(f"Cancel URL: http://localhost:{port}/payment/cancel")
+    print(f"Success URL: {PAYMENT_SERVER_URL}/payment/success")
+    print(f"Cancel URL: {PAYMENT_SERVER_URL}/payment/cancel")
+    print(f"Webhook URL: {PAYMENT_SERVER_URL}/webhook/stripe")
     app.run(host='0.0.0.0', port=port, debug=False)

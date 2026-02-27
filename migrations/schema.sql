@@ -17,7 +17,8 @@ CREATE TABLE IF NOT EXISTS users (
     subscription_expires TIMESTAMP WITH TIME ZONE,
     stripe_customer_id VARCHAR(255) UNIQUE,
     stripe_subscription_id VARCHAR(255) UNIQUE,
-    last_seen TIMESTAMP WITH TIME ZONE
+    last_seen TIMESTAMP WITH TIME ZONE,
+    metadata JSONB DEFAULT '{}'::jsonb
 );
 
 CREATE INDEX idx_users_subscription ON users(subscription_active, subscription_expires);
