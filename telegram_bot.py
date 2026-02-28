@@ -511,7 +511,7 @@ async def linkedin_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     await update.message.reply_text(
         "Great! Now enter your LinkedIn password:\n"
-        "(Don't worry, it's encrypted and never stored in plain text)"
+        "(Encrypted and safely stored in your device, not accessible by anyone but you)"
     )
     return LINKEDIN_PASSWORD
 
