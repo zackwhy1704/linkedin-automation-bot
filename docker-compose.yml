@@ -61,8 +61,8 @@ services:
       DATABASE_PORT: 5432
       DATABASE_NAME: linkedin_bot
       DATABASE_USER: linkedin_bot
-    ports:
-      - "5000:5000"
+    expose:
+      - "5000"
     command: >
       gunicorn payment_server:app
       --bind 0.0.0.0:5000
