@@ -171,7 +171,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             return PAYMENT_PROCESSING
 
     # Check if user already exists
-    user_data = db.get_user(telegram_id)
+    try:
+        user_data = db.get_user(telegram_id)
+    except Exception as e:
+        logger.error(f"Database error in start() for user {telegram_id}: {e}")
+        await update.message.reply_text(
+            "Sorry, we're experiencing a temporary issue. Please try again in a moment.\n\n"
+            "If the problem persists, send /start again."
+        )
+        return ConversationHandler.END
 
     if user_data and user_data.get('subscription_active'):
         await update.message.reply_text(
@@ -496,7 +504,15 @@ async def content_goals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         'posting_frequency': 'daily'
     }
 
-    db.save_user_profile(telegram_id, profile_data, content_strategy)
+    try:
+        db.save_user_profile(telegram_id, profile_data, content_strategy)
+    except Exception as e:
+        logger.error(f"Failed to save user profile for {telegram_id}: {e}")
+        await update.message.reply_text(
+            "Failed to save your profile due to a temporary error.\n\n"
+            "Please try again by sending /start."
+        )
+        return ConversationHandler.END
 
     # Show summary and proceed to payment
     summary = (
@@ -562,11 +578,27 @@ async def linkedin_password(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     # Encrypt and save credentials
     encrypted_password = encrypt_password(password)
-    db.save_linkedin_credentials(
-        telegram_id,
-        context.user_data['linkedin_email'],
-        encrypted_password
-    )
+    try:
+        db.save_linkedin_credentials(
+            telegram_id,
+            context.user_data['linkedin_email'],
+            encrypted_password
+        )
+    except Exception as e:
+        logger.error(f"Failed to save LinkedIn credentials for user {telegram_id}: {e}")
+        # Delete the password message for security even on error
+        try:
+            await update.message.delete()
+        except Exception:
+            pass
+        await context.bot.send_message(
+            chat_id=telegram_id,
+            text=(
+                "Failed to save your LinkedIn credentials due to a temporary error.\n\n"
+                "Please try again by sending your password."
+            )
+        )
+        return LINKEDIN_PASSWORD
 
     # Delete the password message for security
     try:
@@ -596,7 +628,15 @@ async def handle_promo_code_input(update: Update, context: ContextTypes.DEFAULT_
     telegram_id = update.effective_user.id
 
     # Validate promo code
-    result = db.validate_promo_code(promo_code)
+    try:
+        result = db.validate_promo_code(promo_code)
+    except Exception as e:
+        logger.error(f"Failed to validate promo code for user {telegram_id}: {e}")
+        await update.message.reply_text(
+            "Failed to validate promo code due to a temporary error.\n\n"
+            "Please try again in a moment."
+        )
+        return PAYMENT_PROCESSING
 
     if not result:
         await update.message.reply_text(
@@ -785,10 +825,33 @@ async def autopilot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_id = update.effective_user.id
 
     # Check subscription
-    if not db.is_subscription_active(telegram_id):
+    try:
+        if not db.is_subscription_active(telegram_id):
+            await update.message.reply_text(
+                "You need an active subscription to use this feature.\n"
+                "Send /start to get started!"
+            )
+            return
+    except Exception as e:
+        logger.error(f"Failed to check subscription for user {telegram_id}: {e}")
         await update.message.reply_text(
-            "⚠️ You need an active subscription to use this feature.\n"
-            "Send /start to get started!"
+            "Failed to verify your subscription. Please try again in a moment."
+        )
+        return
+
+    # Check LinkedIn credentials exist
+    try:
+        creds = db.get_linkedin_credentials(telegram_id)
+        if not creds:
+            await update.message.reply_text(
+                "You haven't connected your LinkedIn account yet.\n\n"
+                "Please use /settings and select 'Update LinkedIn Credentials' to add your login details first."
+            )
+            return
+    except Exception as e:
+        logger.error(f"Failed to check credentials for user {telegram_id}: {e}")
+        await update.message.reply_text(
+            "Failed to verify your LinkedIn credentials. Please try again in a moment."
         )
         return
 
@@ -809,10 +872,17 @@ async def autopilot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     # Run automation in background
-    if CELERY_ENABLED:
-        autopilot_task.delay(telegram_id)
-    else:
-        Thread(target=run_autopilot, args=(telegram_id,)).start()
+    try:
+        if CELERY_ENABLED:
+            autopilot_task.delay(telegram_id)
+        else:
+            Thread(target=run_autopilot, args=(telegram_id,)).start()
+    except Exception as e:
+        logger.error(f"Failed to start autopilot task for user {telegram_id}: {e}")
+        await update.message.reply_text(
+            "Failed to start autopilot. The automation service may be temporarily unavailable.\n\n"
+            "Please try again in a few minutes."
+        )
 
 
 def run_autopilot(telegram_id: int):
@@ -820,12 +890,29 @@ def run_autopilot(telegram_id: int):
     Legacy threading function - used only if Celery is unavailable
     For multi-user mode, use autopilot_task.delay() instead
     """
-    """Run autopilot in background thread"""
+    global application
+    bot = application.bot if application else None
+    loop = None
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        pass
+
+    def notify_user(message: str):
+        if bot and loop:
+            try:
+                async def _send():
+                    await bot.send_message(chat_id=telegram_id, text=message)
+                asyncio.run_coroutine_threadsafe(_send(), loop)
+            except Exception:
+                pass
+
     try:
         # Get credentials
         creds = db.get_linkedin_credentials(telegram_id)
         if not creds:
             logger.error(f"LinkedIn credentials not found for user {telegram_id}")
+            notify_user("Autopilot failed: LinkedIn credentials not found.\n\nPlease add your credentials via /settings.")
             return
 
         email = creds['email']
@@ -837,6 +924,14 @@ def run_autopilot(telegram_id: int):
 
         if not linkedin_bot.start():
             logger.error(f"Failed to login to LinkedIn for user {telegram_id}")
+            notify_user(
+                "Autopilot failed: Could not sign in to LinkedIn.\n\n"
+                "Possible reasons:\n"
+                "- Incorrect email or password\n"
+                "- LinkedIn security challenge (CAPTCHA/verification)\n"
+                "- Account temporarily locked\n\n"
+                "Please check your credentials via /settings and try again."
+            )
             return
 
         linkedin_bot.load_engagement_config('data/engagement_config.json')
@@ -853,32 +948,59 @@ def run_autopilot(telegram_id: int):
         if results.get('content_posted'):
             db.log_automation_action(telegram_id, 'post', 1)
         if results.get('posts_engaged', 0) > 0:
-            # Assume each engagement is a like + possible comment
             db.log_automation_action(telegram_id, 'like', results['posts_engaged'])
         if results.get('connections_sent', 0) > 0:
             db.log_automation_action(telegram_id, 'connection', results['connections_sent'])
 
-        # Log results
+        # Log results and notify user
         logger.info(
-            f"✅ Autopilot complete for user {telegram_id}: "
+            f"Autopilot complete for user {telegram_id}: "
             f"Posted: {results.get('content_posted', False)}, "
             f"Engaged: {results.get('posts_engaged', 0)}, "
             f"Connections: {results.get('connections_sent', 0)}"
         )
+        notify_user(
+            f"Autopilot Complete!\n\n"
+            f"Posted: {'Yes' if results.get('content_posted') else 'No'}\n"
+            f"Posts engaged: {results.get('posts_engaged', 0)}\n"
+            f"Connections sent: {results.get('connections_sent', 0)}\n\n"
+            f"View your stats with /stats"
+        )
 
     except Exception as e:
         logger.error(f"Autopilot error for user {telegram_id}: {e}")
+        notify_user(f"Autopilot encountered an error: {str(e)}\n\nPlease try again or contact support.")
 
 
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show user statistics"""
     telegram_id = update.effective_user.id
 
-    if not db.is_subscription_active(telegram_id):
-        await update.message.reply_text("⚠️ Subscribe first: /subscribe")
+    try:
+        if not db.is_subscription_active(telegram_id):
+            await update.message.reply_text("Subscribe first: /start")
+            return
+    except Exception as e:
+        logger.error(f"Failed to check subscription for user {telegram_id}: {e}")
+        await update.message.reply_text("Failed to verify your subscription. Please try again.")
         return
 
-    stats = db.get_user_stats(telegram_id)
+    try:
+        stats = db.get_user_stats(telegram_id)
+    except Exception as e:
+        logger.error(f"Failed to get stats for user {telegram_id}: {e}")
+        await update.message.reply_text(
+            "Failed to load your statistics due to a temporary error.\n\n"
+            "Please try again in a moment."
+        )
+        return
+
+    if not stats:
+        await update.message.reply_text(
+            "No statistics found yet. Start using automation commands to build your stats!\n\n"
+            "Try /autopilot to get started."
+        )
+        return
 
     message = (
         f"📊 Your LinkedIn Stats\n\n"
@@ -899,8 +1021,27 @@ async def engage_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Engage with LinkedIn feed"""
     telegram_id = update.effective_user.id
 
-    if not db.is_subscription_active(telegram_id):
-        await update.message.reply_text("⚠️ Subscribe first: /start")
+    try:
+        if not db.is_subscription_active(telegram_id):
+            await update.message.reply_text("Subscribe first: /start")
+            return
+    except Exception as e:
+        logger.error(f"Failed to check subscription for user {telegram_id}: {e}")
+        await update.message.reply_text("Failed to verify your subscription. Please try again.")
+        return
+
+    # Check LinkedIn credentials exist
+    try:
+        creds = db.get_linkedin_credentials(telegram_id)
+        if not creds:
+            await update.message.reply_text(
+                "You haven't connected your LinkedIn account yet.\n\n"
+                "Please use /settings and select 'Update LinkedIn Credentials' to add your login details first."
+            )
+            return
+    except Exception as e:
+        logger.error(f"Failed to check credentials for user {telegram_id}: {e}")
+        await update.message.reply_text("Failed to verify your LinkedIn credentials. Please try again.")
         return
 
     # Show engagement options
@@ -952,10 +1093,17 @@ async def handle_engage_callback(update: Update, context: ContextTypes.DEFAULT_T
             parse_mode='Markdown'
         )
         # Run reply-based engagement in background
-        if CELERY_ENABLED:
-            reply_engagement_task.delay(telegram_id, max_replies=5)
-        else:
-            Thread(target=run_reply_engagement, args=(telegram_id,)).start()
+        try:
+            if CELERY_ENABLED:
+                reply_engagement_task.delay(telegram_id, max_replies=5)
+            else:
+                Thread(target=run_reply_engagement, args=(telegram_id,)).start()
+        except Exception as e:
+            logger.error(f"Failed to start reply engagement for user {telegram_id}: {e}")
+            await query.message.reply_text(
+                "Failed to start engagement. The automation service may be temporarily unavailable.\n\n"
+                "Please try again in a few minutes."
+            )
 
     elif query.data == 'engage_feed':
         await query.edit_message_text(
@@ -972,174 +1120,195 @@ async def handle_engage_callback(update: Update, context: ContextTypes.DEFAULT_T
             parse_mode='Markdown'
         )
         # Run feed engagement in background
-        if CELERY_ENABLED:
-            engage_with_feed_task.delay(telegram_id, max_engagements=10)
-        else:
-            Thread(target=run_engagement, args=(telegram_id,)).start()
+        try:
+            if CELERY_ENABLED:
+                engage_with_feed_task.delay(telegram_id, max_engagements=10)
+            else:
+                Thread(target=run_engagement, args=(telegram_id,)).start()
+        except Exception as e:
+            logger.error(f"Failed to start feed engagement for user {telegram_id}: {e}")
+            await query.message.reply_text(
+                "Failed to start engagement. The automation service may be temporarily unavailable.\n\n"
+                "Please try again in a few minutes."
+            )
 
 
 def run_reply_engagement(telegram_id: int):
     """Legacy threading function - fallback only"""
-    """Run reply-based engagement in background thread"""
+    global application
+    bot = application.bot if application else None
+    loop = None
     try:
-        # Get bot application instance for sending messages
-        global application
-        bot = application.bot
-        loop = application.application.loop if hasattr(application, 'application') else asyncio.get_event_loop()
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        pass
 
-        # Progress callback to send updates to user
-        def send_progress_update(message: str, take_screenshot: bool = False):
-            """Send progress update to Telegram from worker thread"""
+    def send_progress_update(message: str, take_screenshot: bool = False):
+        if bot and loop:
             try:
-                # Send message via async bot
                 async def send_message():
                     await bot.send_message(chat_id=telegram_id, text=message)
-
                 asyncio.run_coroutine_threadsafe(send_message(), loop)
-
-                # Take and queue screenshot if requested
                 if take_screenshot and hasattr(linkedin_bot, 'driver'):
                     screenshot_path = save_screenshot(linkedin_bot.driver, telegram_id, "reply_progress")
                     if screenshot_path:
-                        screenshot_queue.add_screenshot(
-                            telegram_id,
-                            screenshot_path,
-                            "Reply Engagement Progress"
-                        )
-
+                        screenshot_queue.add_screenshot(telegram_id, screenshot_path, "Reply Engagement Progress")
             except Exception as e:
                 logger.error(f"Error sending progress update: {e}")
 
-        # Get credentials
+    linkedin_bot = None
+    try:
         creds = db.get_linkedin_credentials(telegram_id)
         if not creds:
+            send_progress_update("Reply engagement failed: LinkedIn credentials not found.\n\nPlease add your credentials via /settings.")
             return
 
         email = creds['email']
         password = decrypt_password(creds['encrypted_password'])
 
-        # Initialize LinkedIn bot with visible browser
         linkedin_bot = LinkedInBot(email, password, headless=False)
 
         if not linkedin_bot.start():
-            send_progress_update("❌ Failed to start browser automation")
+            send_progress_update(
+                "Reply engagement failed: Could not sign in to LinkedIn.\n\n"
+                "Possible reasons:\n"
+                "- Incorrect email or password\n"
+                "- LinkedIn security challenge\n"
+                "- Account temporarily locked\n\n"
+                "Please check your credentials via /settings."
+            )
             return
 
-        send_progress_update("🔄 Loading notifications and comments...")
+        send_progress_update("Loading notifications and comments...")
 
         linkedin_bot.load_engagement_config('data/engagement_config.json')
 
-        # Reply-based engagement (only respond to comments on your posts)
         replies_posted = linkedin_bot.reply_based_engagement(max_replies=10)
 
         linkedin_bot.stop()
+        linkedin_bot = None
 
-        # Log stats
         if replies_posted > 0:
             db.log_automation_action(telegram_id, 'comment', replies_posted)
 
-        # Send final results
         send_progress_update(
-            f"✅ Reply Engagement Complete!\n\n"
-            f"📊 Posted {replies_posted} replies to people who engaged with you.\n\n"
-            f"Building genuine relationships! 🤝"
+            f"Reply Engagement Complete!\n\n"
+            f"Posted {replies_posted} replies to people who engaged with you.\n\n"
+            f"Building genuine relationships!"
         )
 
     except Exception as e:
         logger.error(f"Reply engagement error: {e}")
-        try:
-            # Send error message to user
-            async def send_error():
-                await bot.send_message(
-                    chat_id=telegram_id,
-                    text=f"❌ Reply engagement error: {str(e)}\n\nPlease try again or contact support."
-                )
-            asyncio.run_coroutine_threadsafe(send_error(), loop)
-        except:
-            pass
+        send_progress_update(f"Reply engagement error: {str(e)}\n\nPlease try again or contact support.")
+    finally:
+        if linkedin_bot:
+            try:
+                linkedin_bot.stop()
+            except Exception:
+                pass
 
 
 def run_engagement(telegram_id: int):
     """Legacy threading function - fallback only"""
-    """Run feed engagement in background thread"""
+    global application
+    bot = application.bot if application else None
+    loop = None
     try:
-        # Get bot application instance for sending messages
-        global application
-        bot = application.bot
-        loop = application.application.loop if hasattr(application, 'application') else asyncio.get_event_loop()
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        pass
 
-        # Progress callback to send updates to user
-        def send_progress_update(message: str, take_screenshot: bool = False):
-            """Send progress update to Telegram from worker thread"""
+    def send_progress_update(message: str, take_screenshot: bool = False):
+        if bot and loop:
             try:
-                # Send message via async bot
                 async def send_message():
                     await bot.send_message(chat_id=telegram_id, text=message)
-
                 asyncio.run_coroutine_threadsafe(send_message(), loop)
-
-                # Take and queue screenshot if requested
                 if take_screenshot and hasattr(linkedin_bot, 'driver'):
                     screenshot_path = save_screenshot(linkedin_bot.driver, telegram_id, "engagement_progress")
                     if screenshot_path:
-                        screenshot_queue.add_screenshot(
-                            telegram_id,
-                            screenshot_path,
-                            "Engagement Progress"
-                        )
-
+                        screenshot_queue.add_screenshot(telegram_id, screenshot_path, "Engagement Progress")
             except Exception as e:
                 logger.error(f"Error sending progress update: {e}")
 
-        # Get credentials
+    linkedin_bot = None
+    try:
         creds = db.get_linkedin_credentials(telegram_id)
         if not creds:
+            send_progress_update("Engagement failed: LinkedIn credentials not found.\n\nPlease add your credentials via /settings.")
             return
 
         email = creds['email']
         password = decrypt_password(creds['encrypted_password'])
 
-        # Initialize LinkedIn bot with visible browser
         linkedin_bot = LinkedInBot(email, password, headless=False)
 
         if not linkedin_bot.start():
-            send_progress_update("❌ Failed to start browser automation")
+            send_progress_update(
+                "Engagement failed: Could not sign in to LinkedIn.\n\n"
+                "Possible reasons:\n"
+                "- Incorrect email or password\n"
+                "- LinkedIn security challenge\n"
+                "- Account temporarily locked\n\n"
+                "Please check your credentials via /settings."
+            )
             return
 
         linkedin_bot.load_engagement_config('data/engagement_config.json')
 
-        # Engage with feed with progress callback
         posts_engaged = linkedin_bot.engage_with_feed(
             max_engagements=10,
             progress_callback=send_progress_update
         )
 
         linkedin_bot.stop()
+        linkedin_bot = None
 
-        # Log stats (each engagement is a like + possible comment)
         if posts_engaged > 0:
             db.log_automation_action(telegram_id, 'like', posts_engaged)
 
+        send_progress_update(
+            f"Feed Engagement Complete!\n\n"
+            f"Engaged with {posts_engaged} posts.\n\n"
+            f"View your stats with /stats"
+        )
+
     except Exception as e:
         logger.error(f"Engagement error: {e}")
-        try:
-            # Send error message to user
-            async def send_error():
-                await bot.send_message(
-                    chat_id=telegram_id,
-                    text=f"❌ Engagement error: {str(e)}\n\nPlease try again or contact support."
-                )
-            asyncio.run_coroutine_threadsafe(send_error(), loop)
-        except:
-            pass
+        send_progress_update(f"Engagement error: {str(e)}\n\nPlease try again or contact support.")
+    finally:
+        if linkedin_bot:
+            try:
+                linkedin_bot.stop()
+            except Exception:
+                pass
 
 
 async def connect_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send connection requests to relevant people"""
     telegram_id = update.effective_user.id
 
-    if not db.is_subscription_active(telegram_id):
-        await update.message.reply_text("⚠️ Subscribe first: /start")
+    try:
+        if not db.is_subscription_active(telegram_id):
+            await update.message.reply_text("Subscribe first: /start")
+            return
+    except Exception as e:
+        logger.error(f"Failed to check subscription for user {telegram_id}: {e}")
+        await update.message.reply_text("Failed to verify your subscription. Please try again.")
+        return
+
+    # Check LinkedIn credentials exist
+    try:
+        creds = db.get_linkedin_credentials(telegram_id)
+        if not creds:
+            await update.message.reply_text(
+                "You haven't connected your LinkedIn account yet.\n\n"
+                "Please use /settings and select 'Update LinkedIn Credentials' to add your login details first."
+            )
+            return
+    except Exception as e:
+        logger.error(f"Failed to check credentials for user {telegram_id}: {e}")
+        await update.message.reply_text("Failed to verify your LinkedIn credentials. Please try again.")
         return
 
     await update.message.reply_text(
@@ -1158,104 +1327,115 @@ async def connect_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     # Run connection requests in background
-    if CELERY_ENABLED:
-        send_connection_requests_task.delay(telegram_id, count=10)
-    else:
-        Thread(target=run_connection_requests, args=(telegram_id,)).start()
+    try:
+        if CELERY_ENABLED:
+            send_connection_requests_task.delay(telegram_id, count=10)
+        else:
+            Thread(target=run_connection_requests, args=(telegram_id,)).start()
+    except Exception as e:
+        logger.error(f"Failed to start connection requests for user {telegram_id}: {e}")
+        await update.message.reply_text(
+            "Failed to start connection builder. The automation service may be temporarily unavailable.\n\n"
+            "Please try again in a few minutes."
+        )
 
 
 def run_connection_requests(telegram_id: int):
     """Legacy threading function - fallback only"""
-    """Run connection requests in background thread"""
+    global application
+    bot = application.bot if application else None
+    loop = None
     try:
-        # Get bot application instance for sending messages
-        global application
-        bot = application.bot
-        loop = application.application.loop if hasattr(application, 'application') else asyncio.get_event_loop()
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        pass
 
-        # Progress callback to send updates to user
-        def send_progress_update(message: str, take_screenshot: bool = False):
-            """Send progress update to Telegram from worker thread"""
+    def send_progress_update(message: str, take_screenshot: bool = False):
+        if bot and loop:
             try:
-                # Send message via async bot
                 async def send_message():
                     await bot.send_message(chat_id=telegram_id, text=message)
-
                 asyncio.run_coroutine_threadsafe(send_message(), loop)
-
-                # Take and queue screenshot if requested
                 if take_screenshot and hasattr(linkedin_bot, 'driver'):
                     screenshot_path = save_screenshot(linkedin_bot.driver, telegram_id, "connection_progress")
                     if screenshot_path:
-                        screenshot_queue.add_screenshot(
-                            telegram_id,
-                            screenshot_path,
-                            "Connection Requests Progress"
-                        )
-
+                        screenshot_queue.add_screenshot(telegram_id, screenshot_path, "Connection Requests Progress")
             except Exception as e:
                 logger.error(f"Error sending progress update: {e}")
 
-        # Get credentials
+    linkedin_bot = None
+    try:
         creds = db.get_linkedin_credentials(telegram_id)
         if not creds:
+            send_progress_update("Connection requests failed: LinkedIn credentials not found.\n\nPlease add your credentials via /settings.")
             return
 
         email = creds['email']
         password = decrypt_password(creds['encrypted_password'])
 
-        # Initialize LinkedIn bot with visible browser
         linkedin_bot = LinkedInBot(email, password, headless=False)
 
         if not linkedin_bot.start():
-            send_progress_update("❌ Failed to start browser automation")
+            send_progress_update(
+                "Connection requests failed: Could not sign in to LinkedIn.\n\n"
+                "Possible reasons:\n"
+                "- Incorrect email or password\n"
+                "- LinkedIn security challenge\n"
+                "- Account temporarily locked\n\n"
+                "Please check your credentials via /settings."
+            )
             return
 
-        send_progress_update("🔄 Searching for relevant professionals...")
+        send_progress_update("Searching for relevant professionals...")
 
         linkedin_bot.load_engagement_config('data/engagement_config.json')
 
-        # Run network outreach (from autopilot)
         connections_sent = linkedin_bot._autopilot_network_outreach(max_connections=5)
 
         linkedin_bot.stop()
+        linkedin_bot = None
 
-        # Log stats
         if connections_sent > 0:
             db.log_automation_action(telegram_id, 'connection', connections_sent)
 
-        # Send final results
         send_progress_update(
-            f"✅ Connection Requests Complete!\n\n"
-            f"📊 Sent {connections_sent} personalized connection requests.\n\n"
-            f"Your network is growing! 🌐",
+            f"Connection Requests Complete!\n\n"
+            f"Sent {connections_sent} personalized connection requests.\n\n"
+            f"Your network is growing!",
             take_screenshot=True
         )
 
     except Exception as e:
         logger.error(f"Connection error: {e}")
-        try:
-            # Send error message to user
-            async def send_error():
-                await bot.send_message(
-                    chat_id=telegram_id,
-                    text=f"❌ Connection error: {str(e)}\n\nPlease try again or contact support."
-                )
-            asyncio.run_coroutine_threadsafe(send_error(), loop)
-        except:
-            pass
+        send_progress_update(f"Connection error: {str(e)}\n\nPlease try again or contact support.")
+    finally:
+        if linkedin_bot:
+            try:
+                linkedin_bot.stop()
+            except Exception:
+                pass
 
 
 async def schedule_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Schedule content for later posting"""
     telegram_id = update.effective_user.id
 
-    if not db.is_subscription_active(telegram_id):
-        await update.message.reply_text("⚠️ Subscribe first: /start")
+    try:
+        if not db.is_subscription_active(telegram_id):
+            await update.message.reply_text("Subscribe first: /start")
+            return
+    except Exception as e:
+        logger.error(f"Failed to check subscription for user {telegram_id}: {e}")
+        await update.message.reply_text("Failed to verify your subscription. Please try again.")
         return
 
     # Get user's posting times from profile
-    user_profile = db.get_user_profile(telegram_id)
+    try:
+        user_profile = db.get_user_profile(telegram_id)
+    except Exception as e:
+        logger.error(f"Failed to get profile for schedule, user {telegram_id}: {e}")
+        await update.message.reply_text("Failed to load your profile. Please try again.")
+        return
     if not user_profile:
         await update.message.reply_text(
             "❌ No profile found. Complete onboarding with /start first."
@@ -1343,8 +1523,13 @@ async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show settings menu for updating profile"""
     telegram_id = update.effective_user.id
 
-    if not db.is_subscription_active(telegram_id):
-        await update.message.reply_text("⚠️ Subscribe first: /start")
+    try:
+        if not db.is_subscription_active(telegram_id):
+            await update.message.reply_text("Subscribe first: /start")
+            return
+    except Exception as e:
+        logger.error(f"Failed to check subscription for user {telegram_id}: {e}")
+        await update.message.reply_text("Failed to verify your subscription. Please try again.")
         return
 
     keyboard = [
@@ -1359,7 +1544,16 @@ async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    user_profile = db.get_user_profile(telegram_id)
+    try:
+        user_profile = db.get_user_profile(telegram_id)
+    except Exception as e:
+        logger.error(f"Failed to get profile for settings, user {telegram_id}: {e}")
+        await update.message.reply_text(
+            "Failed to load your profile due to a temporary error.\n\n"
+            "Please try again in a moment."
+        )
+        return
+
     if user_profile:
         await update.message.reply_text(
             "⚙️ Settings\n\n"
@@ -1368,7 +1562,7 @@ async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         await update.message.reply_text(
-            "❌ No profile found. Please complete onboarding first with /start"
+            "No profile found. Please complete onboarding first with /start"
         )
 
 
@@ -1515,8 +1709,13 @@ async def post_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show post type selection - AI generated or user-written"""
     telegram_id = update.effective_user.id
 
-    if not db.is_subscription_active(telegram_id):
-        await update.message.reply_text("⚠️ Subscribe first: /start")
+    try:
+        if not db.is_subscription_active(telegram_id):
+            await update.message.reply_text("Subscribe first: /start")
+            return
+    except Exception as e:
+        logger.error(f"Failed to check subscription for user {telegram_id}: {e}")
+        await update.message.reply_text("Failed to verify your subscription. Please try again.")
         return
 
     keyboard = [
@@ -1649,24 +1848,47 @@ async def post_command_generate_ai(query_or_update, context: ContextTypes.DEFAUL
 
 def run_post_visible_browser(telegram_id: int, generated_post: str):
     """Legacy threading function - fallback only"""
-    """Run LinkedIn posting with visible browser window"""
+    global application
+    bot = application.bot if application else None
+    loop = None
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        pass
+
+    def notify_user(message: str):
+        if bot and loop:
+            try:
+                async def _send():
+                    await bot.send_message(chat_id=telegram_id, text=message)
+                asyncio.run_coroutine_threadsafe(_send(), loop)
+            except Exception:
+                pass
+
     try:
         # Get credentials
         creds = db.get_linkedin_credentials(telegram_id)
         if not creds:
             logger.error(f"LinkedIn credentials not found for user {telegram_id}")
+            notify_user("Posting failed: LinkedIn credentials not found.\n\nPlease add your credentials via /settings.")
             return
 
         email = creds['email']
         password = decrypt_password(creds['encrypted_password'])
 
-        # Log start (user already got "Posting..." message from main thread)
         logger.info(f"Opening visible LinkedIn browser for user {telegram_id}")
-
         linkedin_bot = LinkedInBot(email, password, headless=False)
 
         if not linkedin_bot.start():
             logger.error(f"Failed to login to LinkedIn for user {telegram_id}")
+            notify_user(
+                "Posting failed: Could not sign in to LinkedIn.\n\n"
+                "Possible reasons:\n"
+                "- Incorrect email or password\n"
+                "- LinkedIn security challenge (CAPTCHA/verification)\n"
+                "- Account temporarily locked\n\n"
+                "Please check your credentials via /settings and try again."
+            )
             return
 
         # Take screenshot after successful login
@@ -1682,19 +1904,25 @@ def run_post_visible_browser(telegram_id: int, generated_post: str):
         if success:
             screenshot_path = save_screenshot(linkedin_bot.driver, telegram_id, "post_success")
             if screenshot_path:
-                screenshot_queue.add_screenshot(telegram_id, screenshot_path, "Post Created Successfully ✅")
+                screenshot_queue.add_screenshot(telegram_id, screenshot_path, "Post Created Successfully")
 
         linkedin_bot.stop()
 
-        # Log the action (use 'post' not 'post_created')
         if success:
             db.log_automation_action(telegram_id, 'post', 1)
-            logger.info(f"✅ Successfully posted to LinkedIn for user {telegram_id}")
+            logger.info(f"Successfully posted to LinkedIn for user {telegram_id}")
+            notify_user("Your post has been published on LinkedIn!\n\nView your stats with /stats")
         else:
             logger.error(f"Failed to post to LinkedIn for user {telegram_id}")
+            notify_user(
+                "Posting failed: Could not create the post on LinkedIn.\n\n"
+                "The browser automation may have encountered an issue.\n"
+                "Please try again with /post."
+            )
 
     except Exception as e:
         logger.error(f"Error posting to LinkedIn for user {telegram_id}: {e}")
+        notify_user(f"Posting encountered an error: {str(e)}\n\nPlease try again or contact support.")
 
 
 async def handle_custom_post_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1831,10 +2059,17 @@ async def handle_post_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         telegram_id = update.effective_user.id
 
         # Run posting with visible browser in background thread
-        if CELERY_ENABLED:
-            post_to_linkedin_task.delay(telegram_id, generated_post)
-        else:
-            Thread(target=run_post_visible_browser, args=(telegram_id, generated_post)).start()
+        try:
+            if CELERY_ENABLED:
+                post_to_linkedin_task.delay(telegram_id, generated_post)
+            else:
+                Thread(target=run_post_visible_browser, args=(telegram_id, generated_post)).start()
+        except Exception as e:
+            logger.error(f"Failed to start posting task for user {telegram_id}: {e}")
+            await query.message.reply_text(
+                "Failed to start posting. The automation service may be temporarily unavailable.\n\n"
+                "Please try again in a few minutes."
+            )
 
         # Clear context
         if 'generated_post' in context.user_data:
@@ -2249,7 +2484,15 @@ async def scan_jobs_for_all_users(context: ContextTypes.DEFAULT_TYPE):
 async def job_search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show job scan status and options."""
     telegram_id = update.effective_user.id
-    config = db.get_job_search_config(telegram_id)
+    try:
+        config = db.get_job_search_config(telegram_id)
+    except Exception as e:
+        logger.error(f"Failed to get job search config for user {telegram_id}: {e}")
+        await update.message.reply_text(
+            "Failed to load job search settings due to a temporary error.\n\n"
+            "Please try again in a moment."
+        )
+        return
 
     if not config or not config.get('target_roles') and not config.get('scan_keywords'):
         await update.message.reply_text(
@@ -2300,19 +2543,30 @@ async def handle_jobsearch_callback(update: Update, context: ContextTypes.DEFAUL
 
     if query.data == 'jobscan_now':
         await query.edit_message_text("🔍 Starting job scan... You'll be notified when new jobs are found.")
-        if CELERY_ENABLED:
-            scan_jobs_task.delay(telegram_id)
-        else:
-            Thread(target=run_job_scan, args=(telegram_id,), daemon=True).start()
+        try:
+            if CELERY_ENABLED:
+                scan_jobs_task.delay(telegram_id)
+            else:
+                Thread(target=run_job_scan, args=(telegram_id,), daemon=True).start()
+        except Exception as e:
+            logger.error(f"Failed to start job scan for user {telegram_id}: {e}")
+            await query.message.reply_text(
+                "Failed to start job scan. Please try again in a few minutes."
+            )
 
     elif query.data == 'jobscan_toggle':
-        config = db.get_job_search_config(telegram_id)
-        current = config.get('notification_enabled', False) if config else False
-        new_state = not current
-        db.execute_query(
-            "UPDATE job_seeking_configs SET notification_enabled = %s WHERE telegram_id = %s",
-            (new_state, telegram_id)
-        )
+        try:
+            config = db.get_job_search_config(telegram_id)
+            current = config.get('notification_enabled', False) if config else False
+            new_state = not current
+            db.execute_query(
+                "UPDATE job_seeking_configs SET notification_enabled = %s WHERE telegram_id = %s",
+                (new_state, telegram_id)
+            )
+        except Exception as e:
+            logger.error(f"Failed to toggle job scan for user {telegram_id}: {e}")
+            await query.edit_message_text("Failed to update job scan settings. Please try again.")
+            return
         state_text = "🟢 enabled" if new_state else "🔴 paused"
         await query.edit_message_text(
             f"Job scanning {state_text}.\n\n"
@@ -2399,12 +2653,20 @@ async def setjob_confirm_callback(update: Update, context: ContextTypes.DEFAULT_
         roles = context.user_data.get('setjob_roles', [])
         locations = context.user_data.get('setjob_locations', [])
 
-        db.save_job_search_config(
-            telegram_id,
-            roles=roles,
-            locations=locations,
-            enabled=True
-        )
+        try:
+            db.save_job_search_config(
+                telegram_id,
+                roles=roles,
+                locations=locations,
+                enabled=True
+            )
+        except Exception as e:
+            logger.error(f"Failed to save job search config for user {telegram_id}: {e}")
+            await query.edit_message_text(
+                "Failed to save your job search settings due to a temporary error.\n\n"
+                "Please try again with /setjob."
+            )
+            return ConversationHandler.END
 
         await query.edit_message_text(
             f"✅ *Job Scanning Activated!*\n\n"
@@ -2453,20 +2715,35 @@ async def scan_job_now_command(update: Update, context: ContextTypes.DEFAULT_TYP
         "🔍 Starting job scan now...\n\n"
         "I'll notify you as soon as new jobs are found. This may take a minute."
     )
-    if CELERY_ENABLED:
-        scan_jobs_task.delay(telegram_id)
-    else:
-        Thread(target=run_job_scan, args=(telegram_id,), daemon=True).start()
+    try:
+        if CELERY_ENABLED:
+            scan_jobs_task.delay(telegram_id)
+        else:
+            Thread(target=run_job_scan, args=(telegram_id,), daemon=True).start()
+    except Exception as e:
+        logger.error(f"Failed to start job scan for user {telegram_id}: {e}")
+        await update.message.reply_text(
+            "Failed to start job scan. The automation service may be temporarily unavailable.\n\n"
+            "Please try again in a few minutes."
+        )
 
 
 # --- /stopjob command ---
 async def stop_job_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Disable job scanning for this user."""
     telegram_id = update.effective_user.id
-    db.execute_query(
-        "UPDATE job_seeking_configs SET notification_enabled = false WHERE telegram_id = %s",
-        (telegram_id,)
-    )
+    try:
+        db.execute_query(
+            "UPDATE job_seeking_configs SET notification_enabled = false WHERE telegram_id = %s",
+            (telegram_id,)
+        )
+    except Exception as e:
+        logger.error(f"Failed to stop job scanning for user {telegram_id}: {e}")
+        await update.message.reply_text(
+            "Failed to pause job scanning due to a temporary error.\n\n"
+            "Please try again in a moment."
+        )
+        return
     await update.message.reply_text(
         "🔴 Job scanning paused.\n\n"
         "Use /jobsearch to re-enable scanning anytime."

@@ -200,15 +200,14 @@ class TestOnboardingFlow(unittest.TestCase):
         mock_db.activate_subscription.assert_called_once()
 
     @patch('multiuser.telegram_bot_multiuser.db')
-    def test_start_payment_cancel_ends(self, mock_db):
-        """Deep link with payment_cancel should end gracefully."""
-        from multiuser.telegram_bot_multiuser import start
-        from telegram.ext import ConversationHandler
+    def test_start_payment_cancel_shows_retry(self, mock_db):
+        """Deep link with payment_cancel should show retry options."""
+        from multiuser.telegram_bot_multiuser import start, PAYMENT_PROCESSING
         update = make_update(text="/start")
         context = make_context(args=['payment_cancel'])
 
         result = asyncio.get_event_loop().run_until_complete(start(update, context))
-        self.assertEqual(result, ConversationHandler.END)
+        self.assertEqual(result, PAYMENT_PROCESSING)
 
     @patch('multiuser.telegram_bot_multiuser.db')
     def test_profile_industry_valid(self, mock_db):
