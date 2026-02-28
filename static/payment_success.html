@@ -4,16 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Payment Successful</title>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             display: flex;
             justify-content: center;
@@ -21,7 +15,6 @@
             min-height: 100vh;
             padding: 20px;
         }
-
         .container {
             background: white;
             border-radius: 20px;
@@ -32,116 +25,41 @@
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
             animation: slideUp 0.5s ease-out;
         }
-
         @keyframes slideUp {
-            from {
-                opacity: 0;
-                transform: translateY(30px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
         }
-
         .checkmark {
-            width: 80px;
-            height: 80px;
-            border-radius: 50%;
-            display: block;
-            stroke-width: 3;
-            stroke: #4CAF50;
-            stroke-miterlimit: 10;
-            margin: 0 auto 20px;
+            width: 80px; height: 80px; border-radius: 50%;
+            display: block; stroke-width: 3; stroke: #4CAF50;
+            stroke-miterlimit: 10; margin: 0 auto 20px;
             box-shadow: inset 0px 0px 0px #4CAF50;
             animation: fill 0.4s ease-in-out 0.4s forwards, scale 0.3s ease-in-out 0.9s both;
         }
-
         .checkmark__circle {
-            stroke-dasharray: 166;
-            stroke-dashoffset: 166;
-            stroke-width: 3;
-            stroke-miterlimit: 10;
-            stroke: #4CAF50;
-            fill: none;
+            stroke-dasharray: 166; stroke-dashoffset: 166;
+            stroke-width: 3; stroke-miterlimit: 10; stroke: #4CAF50; fill: none;
             animation: stroke 0.6s cubic-bezier(0.65, 0, 0.45, 1) forwards;
         }
-
         .checkmark__check {
-            transform-origin: 50% 50%;
-            stroke-dasharray: 48;
-            stroke-dashoffset: 48;
+            transform-origin: 50% 50%; stroke-dasharray: 48; stroke-dashoffset: 48;
             animation: stroke 0.3s cubic-bezier(0.65, 0, 0.45, 1) 0.8s forwards;
         }
-
-        @keyframes stroke {
-            100% {
-                stroke-dashoffset: 0;
-            }
+        @keyframes stroke { 100% { stroke-dashoffset: 0; } }
+        @keyframes scale { 0%, 100% { transform: none; } 50% { transform: scale3d(1.1, 1.1, 1); } }
+        @keyframes fill { 100% { box-shadow: inset 0px 0px 0px 30px #4CAF50; } }
+        h1 { color: #333; font-size: 28px; margin-bottom: 10px; }
+        p { color: #666; font-size: 16px; line-height: 1.6; margin-bottom: 20px; }
+        .info { background: #f5f5f5; padding: 15px; border-radius: 10px; margin-top: 20px; }
+        .info p { margin: 5px 0; font-size: 14px; color: #555; }
+        .btn {
+            display: inline-block; background: #667eea; color: white;
+            padding: 14px 32px; border-radius: 12px; text-decoration: none;
+            font-size: 18px; font-weight: bold; margin-top: 20px;
+            transition: transform 0.2s;
         }
-
-        @keyframes scale {
-            0%, 100% {
-                transform: none;
-            }
-            50% {
-                transform: scale3d(1.1, 1.1, 1);
-            }
-        }
-
-        @keyframes fill {
-            100% {
-                box-shadow: inset 0px 0px 0px 30px #4CAF50;
-            }
-        }
-
-        h1 {
-            color: #333;
-            font-size: 28px;
-            margin-bottom: 10px;
-        }
-
-        p {
-            color: #666;
-            font-size: 16px;
-            line-height: 1.6;
-            margin-bottom: 20px;
-        }
-
-        .info {
-            background: #f5f5f5;
-            padding: 15px;
-            border-radius: 10px;
-            margin-top: 20px;
-        }
-
-        .info p {
-            margin: 5px 0;
-            font-size: 14px;
-            color: #555;
-        }
-
-        .countdown {
-            color: #667eea;
-            font-weight: bold;
-            font-size: 18px;
-            margin-top: 15px;
-        }
-
-        .loader {
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #667eea;
-            border-radius: 50%;
-            width: 30px;
-            height: 30px;
-            animation: spin 1s linear infinite;
-            margin: 20px auto;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
+        .btn:hover { transform: scale(1.05); }
+        .countdown { color: #667eea; font-weight: bold; font-size: 16px; margin-top: 15px; }
     </style>
 </head>
 <body>
@@ -155,74 +73,40 @@
         <p>Your subscription has been activated.</p>
 
         <div class="info">
-            <p><strong>✓</strong> Subscription Active</p>
-            <p><strong>✓</strong> Full Access Granted</p>
-            <p><strong>✓</strong> Ready to Use</p>
+            <p><strong>&#10003;</strong> Subscription Active</p>
+            <p><strong>&#10003;</strong> Full Access Granted</p>
+            <p><strong>&#10003;</strong> Ready to Use</p>
         </div>
 
-        <div id="status">
-            <div class="loader"></div>
-            <p class="countdown">Redirecting to Telegram...</p>
-        </div>
+        <a id="telegram-link" class="btn" href="#">Open Telegram Bot</a>
+        <p class="countdown" id="countdown">Redirecting in 3...</p>
     </div>
 
     <script>
-        // Initialize Telegram WebApp
-        let tg = window.Telegram.WebApp;
-        tg.expand();
+        const params = new URLSearchParams(window.location.search);
+        const botUsername = params.get('bot') || '';
+        const telegramUrl = botUsername
+            ? 'https://t.me/' + botUsername + '?start=payment_success'
+            : '#';
 
-        // Auto-close the webview after 2 seconds
-        setTimeout(function() {
-            // Try multiple methods to close the webview
-            try {
-                // Method 1: Telegram WebApp API
-                if (tg && tg.close) {
-                    tg.close();
-                }
-            } catch (e) {
-                console.log("Method 1 failed:", e);
-            }
+        // Set the button link
+        document.getElementById('telegram-link').href = telegramUrl;
 
-            try {
-                // Method 2: Direct window close
-                window.close();
-            } catch (e) {
-                console.log("Method 2 failed:", e);
-            }
-
-            try {
-                // Method 3: Telegram specific
-                if (window.TelegramWebviewProxy) {
-                    window.TelegramWebviewProxy.postEvent('web_app_close');
-                }
-            } catch (e) {
-                console.log("Method 3 failed:", e);
-            }
-
-            // Method 4: Redirect back to bot as fallback
-            setTimeout(function() {
-                const botUsername = new URLSearchParams(window.location.search).get('bot');
-                if (botUsername) {
-                    window.location.href = `https://t.me/${botUsername}?start=payment_success`;
-                }
-            }, 1000);
-        }, 2000);
-
-        // Update countdown
-        let seconds = 2;
-        const countdownElement = document.querySelector('.countdown');
-        const interval = setInterval(function() {
+        // Auto-redirect countdown
+        let seconds = 3;
+        const countdownEl = document.getElementById('countdown');
+        const timer = setInterval(function() {
             seconds--;
             if (seconds > 0) {
-                countdownElement.textContent = `Closing in ${seconds}...`;
+                countdownEl.textContent = 'Redirecting in ' + seconds + '...';
             } else {
-                countdownElement.textContent = 'Closing now...';
-                clearInterval(interval);
+                countdownEl.textContent = 'Redirecting now...';
+                clearInterval(timer);
+                if (telegramUrl !== '#') {
+                    window.location.href = telegramUrl;
+                }
             }
         }, 1000);
-
-        // Send ready signal to Telegram
-        tg.ready();
     </script>
 </body>
 </html>

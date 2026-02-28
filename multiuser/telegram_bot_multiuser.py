@@ -711,8 +711,8 @@ async def handle_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE
                 'quantity': 1,
             }],
             mode='subscription',
-            success_url=f'https://t.me/{context.bot.username}?start=payment_success',
-            cancel_url=f'https://t.me/{context.bot.username}?start=payment_cancel',
+            success_url=f'{PAYMENT_SERVER_URL}/payment/success?bot={context.bot.username}',
+            cancel_url=f'{PAYMENT_SERVER_URL}/payment/cancel?bot={context.bot.username}',
             client_reference_id=str(telegram_id),
             metadata={'telegram_id': str(telegram_id)},
             # Enable additional payment features

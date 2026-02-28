@@ -4,16 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Payment Cancelled</title>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
             display: flex;
             justify-content: center;
@@ -21,7 +15,6 @@
             min-height: 100vh;
             padding: 20px;
         }
-
         .container {
             background: white;
             border-radius: 20px;
@@ -32,150 +25,59 @@
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
             animation: slideUp 0.5s ease-out;
         }
-
         @keyframes slideUp {
-            from {
-                opacity: 0;
-                transform: translateY(30px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
         }
-
-        .cross {
-            width: 80px;
-            height: 80px;
-            margin: 0 auto 20px;
-            border-radius: 50%;
-            display: block;
-            stroke-width: 3;
-            stroke: #f5576c;
-            stroke-miterlimit: 10;
-            box-shadow: inset 0px 0px 0px #f5576c;
-            animation: fill 0.4s ease-in-out 0.4s forwards, scale 0.3s ease-in-out 0.9s both;
+        .icon { font-size: 64px; margin-bottom: 20px; }
+        h1 { color: #333; font-size: 28px; margin-bottom: 10px; }
+        p { color: #666; font-size: 16px; line-height: 1.6; margin-bottom: 15px; }
+        .btn {
+            display: inline-block; color: white;
+            padding: 14px 32px; border-radius: 12px; text-decoration: none;
+            font-size: 18px; font-weight: bold; margin-top: 15px;
+            transition: transform 0.2s;
         }
-
-        .cross__circle {
-            stroke-dasharray: 166;
-            stroke-dashoffset: 166;
-            stroke-width: 3;
-            stroke-miterlimit: 10;
-            stroke: #f5576c;
-            fill: none;
-            animation: stroke 0.6s cubic-bezier(0.65, 0, 0.45, 1) forwards;
-        }
-
-        .cross__path {
-            transform-origin: 50% 50%;
-            stroke-dasharray: 48;
-            stroke-dashoffset: 48;
-            animation: stroke 0.3s cubic-bezier(0.65, 0, 0.45, 1) 0.8s forwards;
-        }
-
-        @keyframes stroke {
-            100% {
-                stroke-dashoffset: 0;
-            }
-        }
-
-        @keyframes scale {
-            0%, 100% {
-                transform: none;
-            }
-            50% {
-                transform: scale3d(1.1, 1.1, 1);
-            }
-        }
-
-        @keyframes fill {
-            100% {
-                box-shadow: inset 0px 0px 0px 30px #f5576c;
-            }
-        }
-
-        h1 {
-            color: #333;
-            font-size: 28px;
-            margin-bottom: 10px;
-        }
-
-        p {
-            color: #666;
-            font-size: 16px;
-            line-height: 1.6;
-            margin-bottom: 20px;
-        }
-
-        .countdown {
-            color: #f5576c;
-            font-weight: bold;
-            font-size: 18px;
-            margin-top: 15px;
-        }
+        .btn-primary { background: #667eea; }
+        .btn:hover { transform: scale(1.05); }
+        .countdown { color: #f5576c; font-weight: bold; font-size: 16px; margin-top: 15px; }
     </style>
 </head>
 <body>
     <div class="container">
-        <svg class="cross" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 52">
-            <circle class="cross__circle" cx="26" cy="26" r="25" fill="none"/>
-            <path class="cross__path" fill="none" d="M16 16 36 36 M36 16 16 36"/>
-        </svg>
+        <div class="icon">&#128075;</div>
 
         <h1>Payment Cancelled</h1>
         <p>No charges were made to your account.</p>
-        <p>Return to the bot to try again.</p>
+        <p>No worries! You can subscribe anytime when you're ready.</p>
 
-        <p class="countdown">Closing in 2...</p>
+        <a id="telegram-link" class="btn btn-primary" href="#">Return to Telegram Bot</a>
+        <p class="countdown" id="countdown">Redirecting in 3...</p>
     </div>
 
     <script>
-        // Initialize Telegram WebApp
-        let tg = window.Telegram.WebApp;
-        tg.expand();
+        const params = new URLSearchParams(window.location.search);
+        const botUsername = params.get('bot') || '';
+        const telegramUrl = botUsername
+            ? 'https://t.me/' + botUsername + '?start=payment_cancel'
+            : '#';
 
-        // Auto-close after 2 seconds
-        setTimeout(function() {
-            try {
-                if (tg && tg.close) {
-                    tg.close();
-                }
-            } catch (e) {}
+        document.getElementById('telegram-link').href = telegramUrl;
 
-            try {
-                window.close();
-            } catch (e) {}
-
-            try {
-                if (window.TelegramWebviewProxy) {
-                    window.TelegramWebviewProxy.postEvent('web_app_close');
-                }
-            } catch (e) {}
-
-            // Fallback redirect
-            setTimeout(function() {
-                const botUsername = new URLSearchParams(window.location.search).get('bot');
-                if (botUsername) {
-                    window.location.href = `https://t.me/${botUsername}?start=payment_cancel`;
-                }
-            }, 1000);
-        }, 2000);
-
-        // Update countdown
-        let seconds = 2;
-        const countdownElement = document.querySelector('.countdown');
-        const interval = setInterval(function() {
+        let seconds = 3;
+        const countdownEl = document.getElementById('countdown');
+        const timer = setInterval(function() {
             seconds--;
             if (seconds > 0) {
-                countdownElement.textContent = `Closing in ${seconds}...`;
+                countdownEl.textContent = 'Redirecting in ' + seconds + '...';
             } else {
-                countdownElement.textContent = 'Closing now...';
-                clearInterval(interval);
+                countdownEl.textContent = 'Redirecting now...';
+                clearInterval(timer);
+                if (telegramUrl !== '#') {
+                    window.location.href = telegramUrl;
+                }
             }
         }, 1000);
-
-        tg.ready();
     </script>
 </body>
 </html>
