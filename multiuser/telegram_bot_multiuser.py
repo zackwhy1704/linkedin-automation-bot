@@ -597,6 +597,7 @@ async def handle_promo_code_input(update: Update, context: ContextTypes.DEFAULT_
     # Check for FREE bypass code
     if result.get('is_free_bypass'):
         # Completely bypass payment - activate subscription directly
+        db.use_promo_code(promo_code)
         if db.activate_subscription(telegram_id, days=30):
             await update.message.reply_text(
                 "🎉 FREE Code Activated!\n\n"
@@ -2043,22 +2044,22 @@ async def handle_cancel_subscription_callback(update: Update, context: ContextTy
                 cancel_at_period_end=True
             )
 
-            # Update local database
-            db.execute_query("""
-                UPDATE users
-                SET subscription_active = false,
-                    metadata = jsonb_set(
-                        COALESCE(metadata, '{}'::jsonb),
-                        '{cancelled_at}',
-                        to_jsonb(NOW())
-                    )
-                WHERE telegram_id = %s
-            """, (telegram_id,))
-
-            # Get cancellation date
+            # Update local database — keep subscription_active=true until period end
+            # Stripe will fire customer.subscription.deleted when period actually ends
             from datetime import datetime
             cancel_date = datetime.fromtimestamp(subscription.current_period_end)
             cancel_date_str = cancel_date.strftime('%B %d, %Y')
+
+            db.execute_query("""
+                UPDATE users
+                SET subscription_expires = %s,
+                    metadata = jsonb_set(
+                        COALESCE(metadata, '{}'::jsonb),
+                        '{cancellation_pending}',
+                        'true'::jsonb
+                    )
+                WHERE telegram_id = %s
+            """, (cancel_date, telegram_id,))
 
             await query.edit_message_text(
                 f"✅ Subscription Cancelled via Direct API\n\n"

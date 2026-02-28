@@ -139,6 +139,10 @@ def stripe_webhook():
         subscription = event['data']['object']
         handle_subscription_deleted(subscription)
 
+    elif event_type == 'invoice.payment_failed':
+        invoice = event['data']['object']
+        handle_invoice_payment_failed(invoice)
+
     return jsonify({'status': 'success'}), 200
 
 def handle_subscription_updated(subscription):
@@ -167,23 +171,24 @@ def handle_subscription_updated(subscription):
 
         # Check if this is a cancellation
         if cancel_at_period_end:
-            # Subscription is marked for cancellation
+            # Subscription is marked for cancellation — keep active until period end
             logger.info(f"Subscription {subscription_id} marked for cancellation for user {telegram_id}")
+            cancel_date_ts = datetime.fromtimestamp(current_period_end)
 
-            # Update local database
+            # Keep subscription_active=true, set expiry to period end
+            # Stripe will fire customer.subscription.deleted when period actually ends
             db.execute_query("""
                 UPDATE users
-                SET subscription_active = false,
+                SET subscription_expires = %s,
                     metadata = jsonb_set(
                         COALESCE(metadata, '{}'::jsonb),
-                        '{cancelled_at}',
-                        to_jsonb(NOW())
+                        '{cancellation_pending}',
+                        'true'::jsonb
                     )
                 WHERE telegram_id = %s
-            """, (telegram_id,))
+            """, (cancel_date_ts, telegram_id,))
 
-            # Send notification to user via Telegram
-            cancel_date = datetime.fromtimestamp(current_period_end).strftime('%B %d, %Y')
+            cancel_date = cancel_date_ts.strftime('%B %d, %Y')
             send_telegram_notification(
                 telegram_id,
                 f"✅ Subscription Cancelled Successfully\n\n"
@@ -248,6 +253,58 @@ def handle_subscription_deleted(subscription):
 
     except Exception as e:
         logger.error(f"Error handling subscription deletion: {e}")
+
+def handle_invoice_payment_failed(invoice):
+    """Handle failed payment — notify user and deactivate after final attempt"""
+    try:
+        customer_id = invoice.get('customer')
+        subscription_id = invoice.get('subscription')
+        attempt_count = invoice.get('attempt_count', 0)
+        next_attempt = invoice.get('next_payment_attempt')
+
+        logger.warning(f"Payment failed for customer {customer_id}, attempt {attempt_count}")
+
+        # Find user
+        user = db.execute_query("""
+            SELECT telegram_id
+            FROM users
+            WHERE stripe_customer_id = %s OR stripe_subscription_id = %s
+        """, (customer_id, subscription_id), fetch='one')
+
+        if not user:
+            logger.warning(f"User not found for failed payment customer {customer_id}")
+            return
+
+        telegram_id = user['telegram_id']
+
+        if next_attempt:
+            # Stripe will retry — warn the user
+            from datetime import datetime
+            retry_date = datetime.fromtimestamp(next_attempt).strftime('%B %d, %Y')
+            send_telegram_notification(
+                telegram_id,
+                f"⚠️ Payment Failed (Attempt {attempt_count})\n\n"
+                f"Your payment for the LinkedIn Bot subscription could not be processed.\n\n"
+                f"Please update your payment method to avoid losing access:\n"
+                f"• Use /cancelsubscription → Stripe Portal → Update Payment Method\n\n"
+                f"Stripe will retry on: {retry_date}\n\n"
+                f"If payment continues to fail, your subscription will be cancelled automatically."
+            )
+        else:
+            # Final attempt failed — deactivate subscription
+            logger.info(f"Final payment attempt failed for user {telegram_id}, deactivating")
+            db.deactivate_subscription(telegram_id)
+            send_telegram_notification(
+                telegram_id,
+                "❌ Subscription Cancelled — Payment Failed\n\n"
+                "Your subscription has been cancelled because payment could not be processed "
+                "after multiple attempts.\n\n"
+                "To regain access, subscribe again with /start\n\n"
+                "If this was an error, please update your payment method and resubscribe."
+            )
+
+    except Exception as e:
+        logger.error(f"Error handling payment failure: {e}")
 
 def send_telegram_notification(telegram_id: int, message: str):
     """Send notification to user via Telegram bot"""
