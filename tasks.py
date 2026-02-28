@@ -6,6 +6,7 @@ Replaces threading approach with distributed task queue
 """
 
 import os
+import time
 import logging
 import asyncio
 from dotenv import load_dotenv
@@ -17,6 +18,7 @@ from celery_app import app
 from browser_pool import get_browser_pool
 from linkedin_bot import LinkedInBot
 from bot_database_postgres import BotDatabase
+from screenshot_handler import save_screenshot, screenshot_queue
 from cryptography.fernet import Fernet
 
 logger = logging.getLogger(__name__)
@@ -30,6 +32,8 @@ else:
     logger.warning("ENCRYPTION_KEY not set, generating temporary key")
     cipher = Fernet(Fernet.generate_key())
 
+MAX_LOGIN_ATTEMPTS = 3
+
 
 def decrypt_password(encrypted: bytes) -> str:
     """Decrypt LinkedIn password"""
@@ -38,6 +42,48 @@ def decrypt_password(encrypted: bytes) -> str:
     except Exception as e:
         logger.error(f"Failed to decrypt password: {e}")
         raise
+
+
+def login_with_retry(linkedin_bot, telegram_id, max_attempts=MAX_LOGIN_ATTEMPTS):
+    """
+    Attempt LinkedIn login up to max_attempts times with progress notifications.
+
+    Returns True on success, False on failure (sends failure message to user).
+    """
+    for attempt in range(1, max_attempts + 1):
+        send_telegram_notification.delay(
+            telegram_id,
+            f"Signing in to LinkedIn... (attempt {attempt}/{max_attempts})"
+        )
+        if linkedin_bot.start():
+            return True
+        if attempt < max_attempts:
+            send_telegram_notification.delay(
+                telegram_id,
+                f"Sign-in attempt {attempt} failed. Retrying in 10 seconds..."
+            )
+            time.sleep(10)
+
+    send_telegram_notification.delay(
+        telegram_id,
+        f"LinkedIn sign-in failed after {max_attempts} attempts.\n\n"
+        "Possible reasons:\n"
+        "- Incorrect email or password\n"
+        "- LinkedIn is blocking our server device\n\n"
+        "What to do:\n"
+        "1. Check your credentials: /settings > Update LinkedIn Credentials\n"
+        "2. Open LinkedIn in your browser, sign in manually, and approve any "
+        "security prompts (e.g., 'Was this you?')\n"
+        "3. Try again after approving"
+    )
+    return False
+
+
+def take_task_screenshot(driver, telegram_id, action, description):
+    """Save a screenshot and queue it for sending to user."""
+    path = save_screenshot(driver, telegram_id, action)
+    if path:
+        screenshot_queue.add_screenshot(telegram_id, path, description)
 
 
 def get_linkedin_bot(telegram_id: int, browser_context=None):
@@ -103,17 +149,22 @@ def post_to_linkedin_task(self, telegram_id: int, content: str, media: str = Non
         # Login if needed
         if not browser_context.is_logged_in:
             logger.info(f"Logging in to LinkedIn for user {telegram_id}")
-            success = linkedin_bot.start()
-            if not success:
-                raise Exception("LinkedIn login failed")
+            if not login_with_retry(linkedin_bot, telegram_id):
+                return {'success': False, 'error': 'LinkedIn login failed after 3 attempts'}
             browser_context.mark_logged_in()
+
+        take_task_screenshot(linkedin_bot.driver, telegram_id, "login_success", "LinkedIn Sign-In Successful")
+        send_telegram_notification.delay(telegram_id, "Signed in successfully. Creating your post...")
 
         # Create post
         logger.info(f"Creating post for user {telegram_id}")
         success = linkedin_bot.create_post(content, media)
 
         if not success:
+            take_task_screenshot(linkedin_bot.driver, telegram_id, "post_failed", "Post Creation Failed")
             raise Exception("Failed to create LinkedIn post")
+
+        take_task_screenshot(linkedin_bot.driver, telegram_id, "post_success", "Post Created Successfully")
 
         # Log action to database
         db.log_automation_action(telegram_id, 'post', 1, session_id=self.request.id)
@@ -176,8 +227,12 @@ def engage_with_feed_task(self, telegram_id: int, max_engagements: int = 10):
 
         # Login if needed
         if not browser_context.is_logged_in:
-            linkedin_bot.start()
+            if not login_with_retry(linkedin_bot, telegram_id):
+                return {'success': False, 'error': 'LinkedIn login failed after 3 attempts'}
             browser_context.mark_logged_in()
+
+        take_task_screenshot(linkedin_bot.driver, telegram_id, "login_success", "LinkedIn Sign-In Successful")
+        send_telegram_notification.delay(telegram_id, "Signed in successfully. Scrolling through your feed...")
 
         # Load engagement config
         linkedin_bot.load_engagement_config('data/engagement_config.json')
@@ -185,6 +240,8 @@ def engage_with_feed_task(self, telegram_id: int, max_engagements: int = 10):
         # Perform engagement
         logger.info(f"Starting feed engagement for user {telegram_id}")
         posts_engaged = linkedin_bot.engage_with_feed(max_engagements=max_engagements)
+
+        take_task_screenshot(linkedin_bot.driver, telegram_id, "engagement_complete", "Feed Engagement Complete")
 
         # Log stats
         db.log_automation_action(telegram_id, 'like', posts_engaged, session_id=self.request.id)
@@ -241,15 +298,22 @@ def reply_engagement_task(self, telegram_id: int, max_replies: int = 5):
         linkedin_bot = get_linkedin_bot(telegram_id, browser_context)
 
         if not browser_context.is_logged_in:
-            linkedin_bot.start()
+            if not login_with_retry(linkedin_bot, telegram_id):
+                return {'success': False, 'error': 'LinkedIn login failed after 3 attempts'}
             browser_context.mark_logged_in()
+
+        take_task_screenshot(linkedin_bot.driver, telegram_id, "login_success", "LinkedIn Sign-In Successful")
+        send_telegram_notification.delay(telegram_id, "Signed in successfully. Loading notifications and comments...")
 
         # Load reply templates
         linkedin_bot.load_reply_templates('data/reply_templates.json')
 
         # Reply to comments
         logger.info(f"Starting reply engagement for user {telegram_id}")
+        send_telegram_notification.delay(telegram_id, "Scanning your posts for comments to reply to...")
         replies_sent = linkedin_bot.reply_to_comments(max_replies=max_replies)
+
+        take_task_screenshot(linkedin_bot.driver, telegram_id, "reply_complete", "Reply Engagement Complete")
 
         # Log stats
         db.log_automation_action(telegram_id, 'comment', replies_sent, session_id=self.request.id)
@@ -302,15 +366,22 @@ def send_connection_requests_task(self, telegram_id: int, count: int = 10):
         linkedin_bot = get_linkedin_bot(telegram_id, browser_context)
 
         if not browser_context.is_logged_in:
-            linkedin_bot.start()
+            if not login_with_retry(linkedin_bot, telegram_id):
+                return {'success': False, 'error': 'LinkedIn login failed after 3 attempts'}
             browser_context.mark_logged_in()
+
+        take_task_screenshot(linkedin_bot.driver, telegram_id, "login_success", "LinkedIn Sign-In Successful")
+        send_telegram_notification.delay(telegram_id, "Signed in successfully. Searching for relevant professionals...")
 
         # TODO: Implement connection request logic
         # This depends on your existing implementation
         logger.info(f"Sending connection requests for user {telegram_id}")
 
+        send_telegram_notification.delay(telegram_id, "Sending personalized connection requests...")
         # Placeholder - replace with actual logic
         connections_sent = 0  # linkedin_bot.send_connection_requests(count)
+
+        take_task_screenshot(linkedin_bot.driver, telegram_id, "connection_complete", "Connection Requests Complete")
 
         # Log stats
         db.log_automation_action(telegram_id, 'connection', connections_sent, session_id=self.request.id)
@@ -363,8 +434,12 @@ def autopilot_task(self, telegram_id: int, max_posts_to_engage: int = 10, max_co
         linkedin_bot = get_linkedin_bot(telegram_id, browser_context)
 
         if not browser_context.is_logged_in:
-            linkedin_bot.start()
+            if not login_with_retry(linkedin_bot, telegram_id):
+                return {'success': False, 'error': 'LinkedIn login failed after 3 attempts'}
             browser_context.mark_logged_in()
+
+        take_task_screenshot(linkedin_bot.driver, telegram_id, "login_success", "LinkedIn Sign-In Successful")
+        send_telegram_notification.delay(telegram_id, "Signed in successfully. Starting autopilot tasks...")
 
         # Load configs
         linkedin_bot.load_engagement_config('data/engagement_config.json')
@@ -372,10 +447,13 @@ def autopilot_task(self, telegram_id: int, max_posts_to_engage: int = 10, max_co
 
         # Run full autopilot
         logger.info(f"Starting autopilot for user {telegram_id}")
+        send_telegram_notification.delay(telegram_id, "Generating and posting AI content...")
         results = linkedin_bot.run_full_autopilot(
             max_posts_to_engage=max_posts_to_engage,
             max_connections=max_connections
         )
+
+        take_task_screenshot(linkedin_bot.driver, telegram_id, "autopilot_complete", "Autopilot Complete")
 
         # Log all actions
         if results.get('post_created'):
@@ -437,8 +515,10 @@ def scan_jobs_task(self, telegram_id: int):
 
         linkedin_bot = LinkedInBot(email, password, headless=True)
 
-        if not linkedin_bot.start():
-            raise Exception("LinkedIn login failed for job scan")
+        if not login_with_retry(linkedin_bot, telegram_id):
+            return {'success': False, 'error': 'LinkedIn login failed after 3 attempts'}
+
+        send_telegram_notification.delay(telegram_id, "Signed in. Scanning for new job postings...")
 
         # TODO: Implement job scanning logic
         logger.info(f"Scanning jobs for user {telegram_id}")

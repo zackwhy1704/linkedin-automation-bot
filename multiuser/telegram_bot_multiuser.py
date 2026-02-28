@@ -93,6 +93,9 @@ cipher = Fernet(ENCRYPTION_KEY)
 application = None
 
 
+MAX_LOGIN_ATTEMPTS = 3
+
+
 def encrypt_password(password: str) -> bytes:
     """Encrypt password before storing"""
     return cipher.encrypt(password.encode())
@@ -101,6 +104,37 @@ def encrypt_password(password: str) -> bytes:
 def decrypt_password(encrypted: bytes) -> str:
     """Decrypt stored password"""
     return cipher.decrypt(encrypted).decode()
+
+
+def login_with_retry(linkedin_bot, notify_fn=None, max_attempts=MAX_LOGIN_ATTEMPTS):
+    """
+    Attempt LinkedIn login up to max_attempts times.
+    Sends progress updates via notify_fn(message).
+    Returns True on success, False after all attempts fail.
+    """
+    import time
+    for attempt in range(1, max_attempts + 1):
+        if notify_fn:
+            notify_fn(f"Signing in to LinkedIn... (attempt {attempt}/{max_attempts})")
+        if linkedin_bot.start():
+            return True
+        if attempt < max_attempts:
+            if notify_fn:
+                notify_fn(f"Sign-in attempt {attempt} failed. Retrying in 10 seconds...")
+            time.sleep(10)
+    # All attempts exhausted
+    if notify_fn:
+        notify_fn(
+            f"LinkedIn sign-in failed after {max_attempts} attempts.\n\n"
+            "Possible reasons:\n"
+            "- Incorrect email or password\n"
+            "- LinkedIn is blocking our server device\n\n"
+            "What to do:\n"
+            "1. Check your credentials: /settings > Update LinkedIn Credentials\n"
+            "2. Open LinkedIn in your browser, sign in manually, and approve any security prompts (e.g., 'Was this you?')\n"
+            "3. Try again after approving"
+        )
+    return False
 
 
 def validate_text_input(text: str) -> bool:
@@ -858,6 +892,7 @@ async def autopilot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🚀 *Autopilot Initiated!*\n\n"
         "🤖 *What's happening:*\n"
+        "  ✓ Signing in to your LinkedIn\n"
         "  ✓ Generating AI-powered content\n"
         "  ✓ Posting to your LinkedIn\n"
         "  ✓ Engaging with your feed\n"
@@ -865,8 +900,8 @@ async def autopilot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🖥️ *Remote Automation:*\n"
         "All actions are performed securely on our remote servers.\n\n"
         "📸 *Live Updates:*\n"
-        "You'll receive screenshots showing your automation progress in real-time!\n\n"
-        "⏱️ *Estimated time:* 2-3 minutes\n"
+        "You'll receive screenshots and progress updates in real-time!\n\n"
+        "⏱️ *Estimated time:* 30 seconds – 5 minutes\n"
         "I'll notify you when complete! ✨",
         parse_mode='Markdown'
     )
@@ -907,44 +942,45 @@ def run_autopilot(telegram_id: int):
             except Exception:
                 pass
 
+    def take_screenshot(driver, action, description):
+        path = save_screenshot(driver, telegram_id, action)
+        if path:
+            screenshot_queue.add_screenshot(telegram_id, path, description)
+
+    linkedin_bot = None
     try:
-        # Get credentials
         creds = db.get_linkedin_credentials(telegram_id)
         if not creds:
-            logger.error(f"LinkedIn credentials not found for user {telegram_id}")
             notify_user("Autopilot failed: LinkedIn credentials not found.\n\nPlease add your credentials via /settings.")
             return
 
         email = creds['email']
         password = decrypt_password(creds['encrypted_password'])
 
-        # Initialize LinkedIn bot with visible browser
         logger.info(f"Starting autopilot for user {telegram_id}")
         linkedin_bot = LinkedInBot(email, password, headless=False)
 
-        if not linkedin_bot.start():
-            logger.error(f"Failed to login to LinkedIn for user {telegram_id}")
-            notify_user(
-                "Autopilot failed: Could not sign in to LinkedIn.\n\n"
-                "Possible reasons:\n"
-                "- Incorrect email or password\n"
-                "- LinkedIn security challenge (CAPTCHA/verification)\n"
-                "- Account temporarily locked\n\n"
-                "Please check your credentials via /settings and try again."
-            )
+        if not login_with_retry(linkedin_bot, notify_fn=notify_user):
             return
+
+        # Screenshot after login
+        take_screenshot(linkedin_bot.driver, "login_success", "LinkedIn Sign-In Successful")
+        notify_user("Signed in to LinkedIn successfully. Starting autopilot tasks...")
 
         linkedin_bot.load_engagement_config('data/engagement_config.json')
 
-        # Run autopilot
+        notify_user("Generating and posting AI content...")
         results = linkedin_bot.run_full_autopilot(
             max_posts_to_engage=10,
             max_connections=5
         )
 
-        linkedin_bot.stop()
+        # Screenshot after autopilot
+        take_screenshot(linkedin_bot.driver, "autopilot_complete", "Autopilot Complete")
 
-        # Log stats to database
+        linkedin_bot.stop()
+        linkedin_bot = None
+
         if results.get('content_posted'):
             db.log_automation_action(telegram_id, 'post', 1)
         if results.get('posts_engaged', 0) > 0:
@@ -952,13 +988,6 @@ def run_autopilot(telegram_id: int):
         if results.get('connections_sent', 0) > 0:
             db.log_automation_action(telegram_id, 'connection', results['connections_sent'])
 
-        # Log results and notify user
-        logger.info(
-            f"Autopilot complete for user {telegram_id}: "
-            f"Posted: {results.get('content_posted', False)}, "
-            f"Engaged: {results.get('posts_engaged', 0)}, "
-            f"Connections: {results.get('connections_sent', 0)}"
-        )
         notify_user(
             f"Autopilot Complete!\n\n"
             f"Posted: {'Yes' if results.get('content_posted') else 'No'}\n"
@@ -969,7 +998,15 @@ def run_autopilot(telegram_id: int):
 
     except Exception as e:
         logger.error(f"Autopilot error for user {telegram_id}: {e}")
+        if linkedin_bot and hasattr(linkedin_bot, 'driver'):
+            take_screenshot(linkedin_bot.driver, "autopilot_error", f"Autopilot Error: {str(e)[:50]}")
         notify_user(f"Autopilot encountered an error: {str(e)}\n\nPlease try again or contact support.")
+    finally:
+        if linkedin_bot:
+            try:
+                linkedin_bot.stop()
+            except Exception:
+                pass
 
 
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1082,14 +1119,15 @@ async def handle_engage_callback(update: Update, context: ContextTypes.DEFAULT_T
         await query.edit_message_text(
             "💬 *Reply Engagement Activated!*\n\n"
             "🤖 *What's happening:*\n"
+            "  ✓ Signing in to your LinkedIn\n"
             "  ✓ Scanning comments on your posts\n"
             "  ✓ Generating personalized replies\n"
             "  ✓ Building genuine connections\n\n"
             "🖥️ *Remote Automation:*\n"
             "All engagement is performed securely on our remote servers.\n\n"
             "📸 *Progress Updates:*\n"
-            "Screenshots will be sent showing your engagement activity!\n\n"
-            "⏱️ *Estimated time:* 2-3 minutes",
+            "Screenshots and progress updates will be sent in real-time!\n\n"
+            "⏱️ *Estimated time:* 30 seconds – 5 minutes",
             parse_mode='Markdown'
         )
         # Run reply-based engagement in background
@@ -1109,14 +1147,15 @@ async def handle_engage_callback(update: Update, context: ContextTypes.DEFAULT_T
         await query.edit_message_text(
             "👍 *Feed Engagement Started!*\n\n"
             "🤖 *What's happening:*\n"
+            "  ✓ Signing in to your LinkedIn\n"
             "  ✓ Analyzing relevant posts in your feed\n"
             "  ✓ Liking quality content\n"
             "  ✓ Adding thoughtful comments\n\n"
             "🖥️ *Remote Automation:*\n"
             "All engagement is performed securely on our remote servers.\n\n"
             "📸 *Live Updates:*\n"
-            "Screenshots of your activity will be sent to you!\n\n"
-            "⏱️ *Estimated time:* 3-4 minutes",
+            "Screenshots and progress updates will be sent in real-time!\n\n"
+            "⏱️ *Estimated time:* 30 seconds – 5 minutes",
             parse_mode='Markdown'
         )
         # Run feed engagement in background
@@ -1143,24 +1182,25 @@ def run_reply_engagement(telegram_id: int):
     except RuntimeError:
         pass
 
-    def send_progress_update(message: str, take_screenshot: bool = False):
+    def notify_user(message: str):
         if bot and loop:
             try:
-                async def send_message():
+                async def _send():
                     await bot.send_message(chat_id=telegram_id, text=message)
-                asyncio.run_coroutine_threadsafe(send_message(), loop)
-                if take_screenshot and hasattr(linkedin_bot, 'driver'):
-                    screenshot_path = save_screenshot(linkedin_bot.driver, telegram_id, "reply_progress")
-                    if screenshot_path:
-                        screenshot_queue.add_screenshot(telegram_id, screenshot_path, "Reply Engagement Progress")
-            except Exception as e:
-                logger.error(f"Error sending progress update: {e}")
+                asyncio.run_coroutine_threadsafe(_send(), loop)
+            except Exception:
+                pass
+
+    def take_screenshot(driver, action, description):
+        path = save_screenshot(driver, telegram_id, action)
+        if path:
+            screenshot_queue.add_screenshot(telegram_id, path, description)
 
     linkedin_bot = None
     try:
         creds = db.get_linkedin_credentials(telegram_id)
         if not creds:
-            send_progress_update("Reply engagement failed: LinkedIn credentials not found.\n\nPlease add your credentials via /settings.")
+            notify_user("Reply engagement failed: LinkedIn credentials not found.\n\nPlease add your credentials via /settings.")
             return
 
         email = creds['email']
@@ -1168,22 +1208,18 @@ def run_reply_engagement(telegram_id: int):
 
         linkedin_bot = LinkedInBot(email, password, headless=False)
 
-        if not linkedin_bot.start():
-            send_progress_update(
-                "Reply engagement failed: Could not sign in to LinkedIn.\n\n"
-                "Possible reasons:\n"
-                "- Incorrect email or password\n"
-                "- LinkedIn security challenge\n"
-                "- Account temporarily locked\n\n"
-                "Please check your credentials via /settings."
-            )
+        if not login_with_retry(linkedin_bot, notify_fn=notify_user):
             return
 
-        send_progress_update("Loading notifications and comments...")
+        take_screenshot(linkedin_bot.driver, "login_success", "LinkedIn Sign-In Successful")
+        notify_user("Signed in to LinkedIn successfully. Loading notifications and comments...")
 
         linkedin_bot.load_engagement_config('data/engagement_config.json')
 
+        notify_user("Scanning your posts for comments to reply to...")
         replies_posted = linkedin_bot.reply_based_engagement(max_replies=10)
+
+        take_screenshot(linkedin_bot.driver, "reply_complete", "Reply Engagement Complete")
 
         linkedin_bot.stop()
         linkedin_bot = None
@@ -1191,7 +1227,7 @@ def run_reply_engagement(telegram_id: int):
         if replies_posted > 0:
             db.log_automation_action(telegram_id, 'comment', replies_posted)
 
-        send_progress_update(
+        notify_user(
             f"Reply Engagement Complete!\n\n"
             f"Posted {replies_posted} replies to people who engaged with you.\n\n"
             f"Building genuine relationships!"
@@ -1199,7 +1235,9 @@ def run_reply_engagement(telegram_id: int):
 
     except Exception as e:
         logger.error(f"Reply engagement error: {e}")
-        send_progress_update(f"Reply engagement error: {str(e)}\n\nPlease try again or contact support.")
+        if linkedin_bot and hasattr(linkedin_bot, 'driver'):
+            take_screenshot(linkedin_bot.driver, "reply_error", f"Reply Error: {str(e)[:50]}")
+        notify_user(f"Reply engagement error: {str(e)}\n\nPlease try again or contact support.")
     finally:
         if linkedin_bot:
             try:
@@ -1218,24 +1256,25 @@ def run_engagement(telegram_id: int):
     except RuntimeError:
         pass
 
-    def send_progress_update(message: str, take_screenshot: bool = False):
+    def notify_user(message: str):
         if bot and loop:
             try:
-                async def send_message():
+                async def _send():
                     await bot.send_message(chat_id=telegram_id, text=message)
-                asyncio.run_coroutine_threadsafe(send_message(), loop)
-                if take_screenshot and hasattr(linkedin_bot, 'driver'):
-                    screenshot_path = save_screenshot(linkedin_bot.driver, telegram_id, "engagement_progress")
-                    if screenshot_path:
-                        screenshot_queue.add_screenshot(telegram_id, screenshot_path, "Engagement Progress")
-            except Exception as e:
-                logger.error(f"Error sending progress update: {e}")
+                asyncio.run_coroutine_threadsafe(_send(), loop)
+            except Exception:
+                pass
+
+    def take_screenshot(driver, action, description):
+        path = save_screenshot(driver, telegram_id, action)
+        if path:
+            screenshot_queue.add_screenshot(telegram_id, path, description)
 
     linkedin_bot = None
     try:
         creds = db.get_linkedin_credentials(telegram_id)
         if not creds:
-            send_progress_update("Engagement failed: LinkedIn credentials not found.\n\nPlease add your credentials via /settings.")
+            notify_user("Engagement failed: LinkedIn credentials not found.\n\nPlease add your credentials via /settings.")
             return
 
         email = creds['email']
@@ -1243,23 +1282,23 @@ def run_engagement(telegram_id: int):
 
         linkedin_bot = LinkedInBot(email, password, headless=False)
 
-        if not linkedin_bot.start():
-            send_progress_update(
-                "Engagement failed: Could not sign in to LinkedIn.\n\n"
-                "Possible reasons:\n"
-                "- Incorrect email or password\n"
-                "- LinkedIn security challenge\n"
-                "- Account temporarily locked\n\n"
-                "Please check your credentials via /settings."
-            )
+        if not login_with_retry(linkedin_bot, notify_fn=notify_user):
             return
+
+        take_screenshot(linkedin_bot.driver, "login_success", "LinkedIn Sign-In Successful")
+        notify_user("Signed in to LinkedIn successfully. Scrolling through your feed...")
 
         linkedin_bot.load_engagement_config('data/engagement_config.json')
 
+        def engagement_progress(message):
+            notify_user(message)
+
         posts_engaged = linkedin_bot.engage_with_feed(
             max_engagements=10,
-            progress_callback=send_progress_update
+            progress_callback=engagement_progress
         )
+
+        take_screenshot(linkedin_bot.driver, "engagement_complete", "Feed Engagement Complete")
 
         linkedin_bot.stop()
         linkedin_bot = None
@@ -1267,7 +1306,7 @@ def run_engagement(telegram_id: int):
         if posts_engaged > 0:
             db.log_automation_action(telegram_id, 'like', posts_engaged)
 
-        send_progress_update(
+        notify_user(
             f"Feed Engagement Complete!\n\n"
             f"Engaged with {posts_engaged} posts.\n\n"
             f"View your stats with /stats"
@@ -1275,7 +1314,9 @@ def run_engagement(telegram_id: int):
 
     except Exception as e:
         logger.error(f"Engagement error: {e}")
-        send_progress_update(f"Engagement error: {str(e)}\n\nPlease try again or contact support.")
+        if linkedin_bot and hasattr(linkedin_bot, 'driver'):
+            take_screenshot(linkedin_bot.driver, "engagement_error", f"Engagement Error: {str(e)[:50]}")
+        notify_user(f"Engagement error: {str(e)}\n\nPlease try again or contact support.")
     finally:
         if linkedin_bot:
             try:
@@ -1314,14 +1355,15 @@ async def connect_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🤝 *Connection Builder Activated!*\n\n"
         "🤖 *What's happening:*\n"
+        "  ✓ Signing in to your LinkedIn\n"
         "  ✓ Searching for relevant professionals\n"
         "  ✓ Generating personalized connection messages\n"
         "  ✓ Sending connection requests\n\n"
         "🖥️ *Remote Automation:*\n"
         "All actions are performed securely on our remote servers.\n\n"
-        "📸 *Visual Confirmation:*\n"
-        "Screenshots will be sent showing your new connection requests!\n\n"
-        "⏱️ *Estimated time:* 2-3 minutes\n"
+        "📸 *Live Updates:*\n"
+        "Screenshots and progress updates will be sent in real-time!\n\n"
+        "⏱️ *Estimated time:* 30 seconds – 5 minutes\n"
         "Building your professional network... 🌐",
         parse_mode='Markdown'
     )
@@ -1350,24 +1392,25 @@ def run_connection_requests(telegram_id: int):
     except RuntimeError:
         pass
 
-    def send_progress_update(message: str, take_screenshot: bool = False):
+    def notify_user(message: str):
         if bot and loop:
             try:
-                async def send_message():
+                async def _send():
                     await bot.send_message(chat_id=telegram_id, text=message)
-                asyncio.run_coroutine_threadsafe(send_message(), loop)
-                if take_screenshot and hasattr(linkedin_bot, 'driver'):
-                    screenshot_path = save_screenshot(linkedin_bot.driver, telegram_id, "connection_progress")
-                    if screenshot_path:
-                        screenshot_queue.add_screenshot(telegram_id, screenshot_path, "Connection Requests Progress")
-            except Exception as e:
-                logger.error(f"Error sending progress update: {e}")
+                asyncio.run_coroutine_threadsafe(_send(), loop)
+            except Exception:
+                pass
+
+    def take_screenshot(driver, action, description):
+        path = save_screenshot(driver, telegram_id, action)
+        if path:
+            screenshot_queue.add_screenshot(telegram_id, path, description)
 
     linkedin_bot = None
     try:
         creds = db.get_linkedin_credentials(telegram_id)
         if not creds:
-            send_progress_update("Connection requests failed: LinkedIn credentials not found.\n\nPlease add your credentials via /settings.")
+            notify_user("Connection requests failed: LinkedIn credentials not found.\n\nPlease add your credentials via /settings.")
             return
 
         email = creds['email']
@@ -1375,22 +1418,18 @@ def run_connection_requests(telegram_id: int):
 
         linkedin_bot = LinkedInBot(email, password, headless=False)
 
-        if not linkedin_bot.start():
-            send_progress_update(
-                "Connection requests failed: Could not sign in to LinkedIn.\n\n"
-                "Possible reasons:\n"
-                "- Incorrect email or password\n"
-                "- LinkedIn security challenge\n"
-                "- Account temporarily locked\n\n"
-                "Please check your credentials via /settings."
-            )
+        if not login_with_retry(linkedin_bot, notify_fn=notify_user):
             return
 
-        send_progress_update("Searching for relevant professionals...")
+        take_screenshot(linkedin_bot.driver, "login_success", "LinkedIn Sign-In Successful")
+        notify_user("Signed in to LinkedIn successfully. Searching for relevant professionals...")
 
         linkedin_bot.load_engagement_config('data/engagement_config.json')
 
+        notify_user("Sending personalized connection requests...")
         connections_sent = linkedin_bot._autopilot_network_outreach(max_connections=5)
+
+        take_screenshot(linkedin_bot.driver, "connection_complete", "Connection Requests Complete")
 
         linkedin_bot.stop()
         linkedin_bot = None
@@ -1398,16 +1437,17 @@ def run_connection_requests(telegram_id: int):
         if connections_sent > 0:
             db.log_automation_action(telegram_id, 'connection', connections_sent)
 
-        send_progress_update(
+        notify_user(
             f"Connection Requests Complete!\n\n"
             f"Sent {connections_sent} personalized connection requests.\n\n"
-            f"Your network is growing!",
-            take_screenshot=True
+            f"Your network is growing!"
         )
 
     except Exception as e:
         logger.error(f"Connection error: {e}")
-        send_progress_update(f"Connection error: {str(e)}\n\nPlease try again or contact support.")
+        if linkedin_bot and hasattr(linkedin_bot, 'driver'):
+            take_screenshot(linkedin_bot.driver, "connection_error", f"Connection Error: {str(e)[:50]}")
+        notify_user(f"Connection error: {str(e)}\n\nPlease try again or contact support.")
     finally:
         if linkedin_bot:
             try:
@@ -1879,22 +1919,16 @@ def run_post_visible_browser(telegram_id: int, generated_post: str):
         logger.info(f"Opening visible LinkedIn browser for user {telegram_id}")
         linkedin_bot = LinkedInBot(email, password, headless=False)
 
-        if not linkedin_bot.start():
-            logger.error(f"Failed to login to LinkedIn for user {telegram_id}")
-            notify_user(
-                "Posting failed: Could not sign in to LinkedIn.\n\n"
-                "Possible reasons:\n"
-                "- Incorrect email or password\n"
-                "- LinkedIn security challenge (CAPTCHA/verification)\n"
-                "- Account temporarily locked\n\n"
-                "Please check your credentials via /settings and try again."
-            )
+        if not login_with_retry(linkedin_bot, notify_fn=notify_user):
             return
 
         # Take screenshot after successful login
-        screenshot_path = save_screenshot(linkedin_bot.driver, telegram_id, "login_success")
-        if screenshot_path:
-            screenshot_queue.add_screenshot(telegram_id, screenshot_path, "LinkedIn Login Successful")
+        take_screenshot = lambda action, desc: (
+            lambda p: screenshot_queue.add_screenshot(telegram_id, p, desc) if p else None
+        )(save_screenshot(linkedin_bot.driver, telegram_id, action))
+
+        take_screenshot("login_success", "LinkedIn Sign-In Successful")
+        notify_user("Signed in to LinkedIn successfully. Creating your post...")
 
         # Create the post
         logger.info(f"Creating LinkedIn post for user {telegram_id}")
@@ -1902,9 +1936,7 @@ def run_post_visible_browser(telegram_id: int, generated_post: str):
 
         # Take screenshot after posting
         if success:
-            screenshot_path = save_screenshot(linkedin_bot.driver, telegram_id, "post_success")
-            if screenshot_path:
-                screenshot_queue.add_screenshot(telegram_id, screenshot_path, "Post Created Successfully")
+            take_screenshot("post_success", "Post Created Successfully")
 
         linkedin_bot.stop()
 
@@ -1913,6 +1945,7 @@ def run_post_visible_browser(telegram_id: int, generated_post: str):
             logger.info(f"Successfully posted to LinkedIn for user {telegram_id}")
             notify_user("Your post has been published on LinkedIn!\n\nView your stats with /stats")
         else:
+            take_screenshot("post_failed", "Post Creation Failed")
             logger.error(f"Failed to post to LinkedIn for user {telegram_id}")
             notify_user(
                 "Posting failed: Could not create the post on LinkedIn.\n\n"
@@ -1922,6 +1955,13 @@ def run_post_visible_browser(telegram_id: int, generated_post: str):
 
     except Exception as e:
         logger.error(f"Error posting to LinkedIn for user {telegram_id}: {e}")
+        if linkedin_bot and hasattr(linkedin_bot, 'driver'):
+            try:
+                path = save_screenshot(linkedin_bot.driver, telegram_id, "post_error")
+                if path:
+                    screenshot_queue.add_screenshot(telegram_id, path, f"Post Error: {str(e)[:50]}")
+            except Exception:
+                pass
         notify_user(f"Posting encountered an error: {str(e)}\n\nPlease try again or contact support.")
 
 
@@ -2048,11 +2088,11 @@ async def handle_post_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             "🚀 *Automation Starting...*\n\n"
             "🖥️ *Remote Processing:*\n"
             "Your post is being published on our secure remote servers.\n\n"
-            "📸 *Screenshot Delivery:*\n"
-            "Watch your progress! Screenshots will be sent to you within 10 seconds showing:\n"
-            "  • LinkedIn login confirmation\n"
+            "📸 *Live Updates:*\n"
+            "Watch your progress! Screenshots and updates will be sent showing:\n"
+            "  • LinkedIn sign-in progress\n"
             "  • Your published post\n\n"
-            "⏱️ Please wait approximately 30 seconds...",
+            "⏱️ *Estimated time:* 30 seconds – 5 minutes",
             parse_mode='Markdown'
         )
 
@@ -2398,9 +2438,9 @@ def run_job_scan(telegram_id: int):
 
         # Start LinkedIn bot
         linkedin_bot = LinkedInBot(email, password, headless=True)
-        if not linkedin_bot.start():
-            logger.error(f"Failed to start LinkedIn bot for job scan (user {telegram_id})")
+        if not login_with_retry(linkedin_bot, notify_fn=notify):
             return
+        notify("Signed in to LinkedIn. Scanning for new job postings...")
 
         job_search = linkedin_bot.job_search_module
         all_new_jobs = []
