@@ -1,14 +1,13 @@
-version: "3.8"
-
 services:
   # ─── PostgreSQL Database ────────────────────────────────────────────
   db:
     image: postgres:16-alpine
     restart: always
+    env_file: .env.production
     environment:
       POSTGRES_DB: linkedin_bot
       POSTGRES_USER: linkedin_bot
-      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-changeme}
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./migrations/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
