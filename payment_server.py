@@ -50,8 +50,21 @@ def payment_cancel():
 
 @app.route('/payment/cancel-complete')
 def cancel_complete():
-    """Page shown after user returns from Stripe portal"""
+    """Page shown after user returns from Stripe portal — auto-redirects to Telegram"""
     telegram_id = request.args.get('telegram_id', '')
+    bot_token = os.getenv('TELEGRAM_BOT_TOKEN', '')
+    # Extract bot username from token (first part is bot ID)
+    bot_username = ''
+    try:
+        import requests as req
+        resp = req.get(f'https://api.telegram.org/bot{bot_token}/getMe', timeout=5)
+        if resp.status_code == 200:
+            bot_username = resp.json().get('result', {}).get('username', '')
+    except Exception:
+        pass
+
+    telegram_url = f'https://t.me/{bot_username}' if bot_username else '#'
+
     return f"""
     <!DOCTYPE html>
     <html>
@@ -60,51 +73,48 @@ def cancel_complete():
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
+            * {{ margin: 0; padding: 0; box-sizing: border-box; }}
             body {{
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                min-height: 100vh;
-                margin: 0;
+                display: flex; justify-content: center; align-items: center;
+                min-height: 100vh; margin: 0;
                 background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
+                color: white; padding: 20px;
             }}
             .container {{
-                text-align: center;
-                padding: 40px;
+                text-align: center; padding: 40px;
                 background: rgba(255, 255, 255, 0.1);
-                border-radius: 20px;
-                backdrop-filter: blur(10px);
-                max-width: 400px;
+                border-radius: 20px; backdrop-filter: blur(10px);
+                max-width: 400px; width: 100%;
             }}
             h1 {{ font-size: 48px; margin: 20px 0; }}
             p {{ font-size: 18px; line-height: 1.6; margin: 15px 0; }}
-            .loader {{
-                border: 4px solid rgba(255, 255, 255, 0.3);
-                border-top: 4px solid white;
-                border-radius: 50%;
-                width: 50px;
-                height: 50px;
-                animation: spin 1s linear infinite;
-                margin: 20px auto;
+            .btn {{
+                display: inline-block; background: white; color: #667eea;
+                padding: 14px 32px; border-radius: 12px; text-decoration: none;
+                font-size: 18px; font-weight: bold; margin-top: 20px;
             }}
-            @keyframes spin {{
-                0% {{ transform: rotate(0deg); }}
-                100% {{ transform: rotate(360deg); }}
-            }}
+            .countdown {{ font-size: 16px; opacity: 0.8; margin-top: 15px; }}
         </style>
     </head>
     <body>
         <div class="container">
-            <div class="loader"></div>
-            <h1>⏳</h1>
-            <p><strong>Processing your cancellation...</strong></p>
-            <p>Check your Telegram bot for confirmation!</p>
-            <p style="font-size: 14px; opacity: 0.8; margin-top: 30px;">
-                You'll receive a notification once Stripe confirms the cancellation (usually within seconds).
-            </p>
+            <h1>&#10003;</h1>
+            <p><strong>Cancellation processed</strong></p>
+            <p>Check your Telegram bot for confirmation details.</p>
+            <a class="btn" href="{telegram_url}">Return to Telegram Bot</a>
+            <p class="countdown" id="countdown">Redirecting in 3...</p>
         </div>
+        <script>
+            var seconds = 3;
+            var url = "{telegram_url}";
+            var el = document.getElementById('countdown');
+            var t = setInterval(function() {{
+                seconds--;
+                if (seconds > 0) {{ el.textContent = 'Redirecting in ' + seconds + '...'; }}
+                else {{ el.textContent = 'Redirecting now...'; clearInterval(t); if (url !== '#') window.location.href = url; }}
+            }}, 1000);
+        </script>
     </body>
     </html>
     """, 200, {'Content-Type': 'text/html; charset=utf-8'}

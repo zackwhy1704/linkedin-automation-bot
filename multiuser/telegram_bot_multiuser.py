@@ -152,12 +152,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
         # Handle payment cancellation
         elif param == 'payment_cancel':
+            keyboard = [
+                [InlineKeyboardButton("Try Again", callback_data='subscribe')],
+                [InlineKeyboardButton("I Have a Promo Code", callback_data='promo_code')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
             await update.message.reply_text(
-                "❌ Payment cancelled.\n\n"
-                "No worries! When you're ready to subscribe, send /start to begin again.\n\n"
-                "Questions? Send /help"
+                "Payment was not completed.\n\n"
+                "No charges were made to your account.\n\n"
+                "You can:\n"
+                "• Tap 'Try Again' to subscribe\n"
+                "• Enter a promo code if you have one\n"
+                "• Send /start anytime to restart\n\n"
+                "Questions? Send /help",
+                reply_markup=reply_markup
             )
-            return ConversationHandler.END
+            return PAYMENT_PROCESSING
 
     # Check if user already exists
     user_data = db.get_user(telegram_id)
