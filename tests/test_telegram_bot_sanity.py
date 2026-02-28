@@ -738,7 +738,7 @@ class TestPostCallbacks(unittest.TestCase):
         asyncio.get_event_loop().run_until_complete(
             handle_post_callback(update, context)
         )
-        mock_task.delay.assert_called_once_with(12345, 'My LinkedIn post!')
+        mock_task.delay.assert_called_once_with(12345, 'My LinkedIn post!', media=None)
 
 
 # ═══════════════════════════════════════════════════════════════════════════

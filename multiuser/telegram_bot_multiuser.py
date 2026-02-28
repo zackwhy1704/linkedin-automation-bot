@@ -95,6 +95,15 @@ application = None
 
 MAX_LOGIN_ATTEMPTS = 3
 
+# Media upload settings for post attachments
+from pathlib import Path
+UPLOAD_DIR = Path("uploads/post_media")
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+SUPPORTED_IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif'}
+SUPPORTED_VIDEO_EXTENSIONS = {'.mp4', '.mov'}
+SUPPORTED_MEDIA_EXTENSIONS = SUPPORTED_IMAGE_EXTENSIONS | SUPPORTED_VIDEO_EXTENSIONS
+MAX_MEDIA_SIZE_MB = 10
+
 
 def encrypt_password(password: str) -> bytes:
     """Encrypt password before storing"""
@@ -143,9 +152,62 @@ def validate_text_input(text: str) -> bool:
     Allowed: letters (any language), spaces, commas, hyphens, apostrophes, parentheses, ampersands
     """
     import re
+    if not text or not text.strip():
+        return False
     # Allow letters (including unicode), spaces, commas, hyphens, apostrophes, parentheses, ampersands, and periods
     pattern = r'^[\w\s,\-\'\(\)&\.]+$'
-    return bool(re.match(pattern, text, re.UNICODE))
+    return bool(re.match(pattern, text.strip(), re.UNICODE))
+
+
+def validate_email(email: str) -> bool:
+    """Validate basic email format: something@something.something"""
+    import re
+    if not email or not email.strip():
+        return False
+    pattern = r'^[^\s@]+@[^\s@]+\.[^\s@]+$'
+    return bool(re.match(pattern, email.strip()))
+
+
+def validate_password(password: str) -> str:
+    """
+    Validate password meets minimum requirements.
+    Returns error message if invalid, or empty string if valid.
+    """
+    if not password:
+        return "Password cannot be empty."
+    if len(password) < 6:
+        return "Password must be at least 6 characters long."
+    if len(password) > 200:
+        return "Password is too long. Please enter a shorter password."
+    return ""
+
+
+def validate_time_input(times_text: str) -> tuple:
+    """
+    Validate comma-separated HH:MM times (24-hour format).
+    Returns (is_valid, parsed_times, error_msg).
+    """
+    import re
+    times = [t.strip() for t in times_text.split(',') if t.strip()]
+    if not times:
+        return False, [], "Please enter at least one time."
+
+    time_pattern = r'^([01]\d|2[0-3]):([0-5]\d)$'
+    invalid_times = []
+    valid_times = []
+    for t in times:
+        if re.match(time_pattern, t):
+            valid_times.append(t)
+        else:
+            invalid_times.append(t)
+
+    if invalid_times:
+        return (False, [],
+                f"Invalid time(s): {', '.join(invalid_times)}\n\n"
+                f"Please use HH:MM format (24-hour clock).\n"
+                f"Examples: 09:00, 13:30, 17:00")
+
+    return True, valid_times, ""
 
 
 # ============================================================================
@@ -247,12 +309,19 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def profile_industry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Collect user's industry"""
-    industry = update.message.text
+    industry = update.message.text.strip()
+
+    if not industry:
+        await update.message.reply_text(
+            "Input cannot be empty. Please enter your industry:\n\n"
+            "Example: Technology, AI, Software Development"
+        )
+        return PROFILE_INDUSTRY
 
     # Validate input
     if not validate_text_input(industry):
         await update.message.reply_text(
-            "❌ Invalid input! Please use only letters, spaces, and commas.\n\n"
+            "Invalid input. Please use only letters, spaces, and commas.\n\n"
             "Example: Technology, AI, Software Development\n\n"
             "Please enter your industry again:"
         )
@@ -269,12 +338,19 @@ async def profile_industry(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 async def profile_skills(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Collect user's skills"""
-    skills = update.message.text
+    skills = update.message.text.strip()
+
+    if not skills:
+        await update.message.reply_text(
+            "Input cannot be empty. Please enter your skills:\n\n"
+            "Example: Python, Machine Learning, Cloud Computing"
+        )
+        return PROFILE_SKILLS
 
     # Validate input
     if not validate_text_input(skills):
         await update.message.reply_text(
-            "❌ Invalid input! Please use only letters, spaces, and commas.\n\n"
+            "Invalid input. Please use only letters, spaces, and commas.\n\n"
             "Example: Python, Machine Learning, Cloud Computing\n\n"
             "Please enter your skills again:"
         )
@@ -291,12 +367,19 @@ async def profile_skills(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def profile_goals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Collect user's career goals"""
-    goals = update.message.text
+    goals = update.message.text.strip()
+
+    if not goals:
+        await update.message.reply_text(
+            "Input cannot be empty. Please enter your career goals:\n\n"
+            "Example: Become a Tech Lead, Build AI Products, Start a Startup"
+        )
+        return PROFILE_GOALS
 
     # Validate input
     if not validate_text_input(goals):
         await update.message.reply_text(
-            "❌ Invalid input! Please use only letters, spaces, and commas.\n\n"
+            "Invalid input. Please use only letters, spaces, and commas.\n\n"
             "Example: Become a Tech Lead, Build AI Products, Start a Startup\n\n"
             "Please enter your career goals again:"
         )
@@ -410,10 +493,17 @@ async def custom_tone_input(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     """Handle custom tone text input"""
     custom_tone = update.message.text.strip()
 
+    if not custom_tone:
+        await update.message.reply_text(
+            "Input cannot be empty. Please describe your custom tone:\n\n"
+            "Example: witty and humorous, inspiring and motivational"
+        )
+        return CUSTOM_TONE
+
     # Validate input
     if not validate_text_input(custom_tone):
         await update.message.reply_text(
-            "❌ Invalid input! Please use only letters, spaces, and commas.\n\n"
+            "Invalid input. Please use only letters, spaces, and commas.\n\n"
             "Example: witty and humorous, inspiring and motivational\n\n"
             "Please enter your custom tone again:"
         )
@@ -438,12 +528,19 @@ async def custom_tone_input(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 async def content_themes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Collect content themes"""
-    themes = update.message.text
+    themes = update.message.text.strip()
+
+    if not themes:
+        await update.message.reply_text(
+            "Input cannot be empty. Please enter your content themes:\n\n"
+            "Example: AI & Machine Learning, Career Development, Tech Trends"
+        )
+        return CONTENT_THEMES
 
     # Validate input
     if not validate_text_input(themes):
         await update.message.reply_text(
-            "❌ Invalid input! Please use only letters, spaces, and commas.\n\n"
+            "Invalid input. Please use only letters, spaces, and commas.\n\n"
             "Example: AI & Machine Learning, Career Development, Tech Trends\n\n"
             "Please enter your content themes again:"
         )
@@ -489,12 +586,23 @@ async def optimal_times(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             "- attract recruiters and collaborators"
         )
     else:
-        # User entered custom times
-        times = update.message.text
-        context.user_data['optimal_times'] = [t.strip() for t in times.split(',')]
+        # User entered custom times — validate HH:MM format
+        times_text = update.message.text
+        is_valid, parsed_times, error_msg = validate_time_input(times_text)
+
+        if not is_valid:
+            keyboard = [[InlineKeyboardButton("Use default times (09:00, 13:00, 17:00)", callback_data='use_default_times')]]
+            await update.message.reply_text(
+                f"{error_msg}\n\n"
+                "Or click below to use our recommended times:",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+            return OPTIMAL_TIMES
+
+        context.user_data['optimal_times'] = parsed_times
 
         await update.message.reply_text(
-            f"✅ Custom times set: {', '.join(context.user_data['optimal_times'])}\n\n"
+            f"✅ Custom times set: {', '.join(parsed_times)}\n\n"
             "Finally, what are your content goals? (comma-separated)\n\n"
             "Example:\n"
             "- position as a builder who ships real products\n"
@@ -507,12 +615,19 @@ async def optimal_times(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
 async def content_goals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Collect content goals and show summary"""
-    goals = update.message.text
+    goals = update.message.text.strip()
+
+    if not goals:
+        await update.message.reply_text(
+            "Input cannot be empty. Please enter your content goals:\n\n"
+            "Example: Build thought leadership, Attract recruiters, Share expertise"
+        )
+        return CONTENT_GOALS
 
     # Validate input
     if not validate_text_input(goals):
         await update.message.reply_text(
-            "❌ Invalid input! Please use only letters, spaces, and commas.\n\n"
+            "Invalid input. Please use only letters, spaces, and commas.\n\n"
             "Example: Build thought leadership, Attract recruiters, Share expertise\n\n"
             "Please enter your content goals again:"
         )
@@ -595,7 +710,22 @@ async def content_goals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
 async def linkedin_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Collect LinkedIn email"""
-    email = update.message.text
+    email = update.message.text.strip()
+
+    if not email:
+        await update.message.reply_text(
+            "Email cannot be empty.\n\n"
+            "Please enter your LinkedIn email address (e.g., john@example.com):"
+        )
+        return LINKEDIN_EMAIL
+
+    if not validate_email(email):
+        await update.message.reply_text(
+            "That doesn't look like a valid email address.\n\n"
+            "Please enter a valid email (e.g., john@example.com):"
+        )
+        return LINKEDIN_EMAIL
+
     context.user_data['linkedin_email'] = email
 
     await update.message.reply_text(
@@ -610,6 +740,21 @@ async def linkedin_password(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     password = update.message.text
     telegram_id = update.effective_user.id
 
+    # Delete the password message immediately for security
+    try:
+        await update.message.delete()
+    except Exception:
+        pass
+
+    # Validate password
+    password_error = validate_password(password)
+    if password_error:
+        await context.bot.send_message(
+            chat_id=telegram_id,
+            text=f"{password_error}\n\nPlease enter your LinkedIn password again:"
+        )
+        return LINKEDIN_PASSWORD
+
     # Encrypt and save credentials
     encrypted_password = encrypt_password(password)
     try:
@@ -620,11 +765,6 @@ async def linkedin_password(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         )
     except Exception as e:
         logger.error(f"Failed to save LinkedIn credentials for user {telegram_id}: {e}")
-        # Delete the password message for security even on error
-        try:
-            await update.message.delete()
-        except Exception:
-            pass
         await context.bot.send_message(
             chat_id=telegram_id,
             text=(
@@ -633,12 +773,6 @@ async def linkedin_password(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             )
         )
         return LINKEDIN_PASSWORD
-
-    # Delete the password message for security
-    try:
-        await update.message.delete()
-    except Exception:
-        pass  # Message might already be deleted
 
     # Send confirmation and next question
     await context.bot.send_message(
@@ -1771,8 +1905,302 @@ async def post_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+def _media_status_line(context):
+    """Return a status line showing attached media, or empty string."""
+    media_path = context.user_data.get('post_media')
+    if media_path:
+        fname = Path(media_path).name
+        return f"\n📎 *Attached:* {fname}\n"
+    return "\n"
+
+
+def _build_post_preview_keyboard(telegram_id, context, is_ai=True):
+    """Build the inline keyboard for post preview, including media buttons."""
+    has_media = bool(context.user_data.get('post_media'))
+    keyboard = [
+        [InlineKeyboardButton("📱 Post on Mobile (Copy & Paste)", callback_data='post_mobile')],
+        [InlineKeyboardButton("🖥️ Post with Browser (Server)", callback_data=f'post_approve_{telegram_id}')],
+    ]
+    # Media attach / remove button
+    if has_media:
+        keyboard.append([InlineKeyboardButton("🗑️ Remove Attached Media", callback_data='post_remove_media')])
+    else:
+        keyboard.append([InlineKeyboardButton("📷 Attach Image/Video", callback_data='post_attach_media')])
+    if is_ai:
+        keyboard.append([InlineKeyboardButton("🔄 Generate New", callback_data='post_ai_generate')])
+        keyboard.append([InlineKeyboardButton("✏️ Write My Own Instead", callback_data='post_write_own')])
+    else:
+        keyboard.append([InlineKeyboardButton("✏️ Edit & Retype", callback_data='post_write_own')])
+    keyboard.append([InlineKeyboardButton("❌ Discard", callback_data='post_discard')])
+    return keyboard
+
+
+async def handle_post_media_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle photo or document upload when user is attaching media to a post."""
+    if not context.user_data.get('awaiting_post_media'):
+        return  # Not in media upload mode — let other handlers run
+
+    context.user_data['awaiting_post_media'] = False
+    telegram_id = update.effective_user.id
+
+    try:
+        # Determine file source: photo or document
+        if update.message.photo:
+            # Telegram sends multiple sizes; pick the largest
+            photo = update.message.photo[-1]
+            file_id = photo.file_id
+            file_size = photo.file_size or 0
+            file_name = f"{telegram_id}_{uuid.uuid4().hex[:8]}.jpg"
+        elif update.message.document:
+            doc = update.message.document
+            file_id = doc.file_id
+            file_size = doc.file_size or 0
+            file_name = doc.file_name or f"{telegram_id}_{uuid.uuid4().hex[:8]}"
+        else:
+            await update.message.reply_text("Please send a photo or a supported file (JPG, PNG, GIF, MP4, MOV).")
+            context.user_data['awaiting_post_media'] = True
+            return
+
+        # Validate file size
+        if file_size > MAX_MEDIA_SIZE_MB * 1024 * 1024:
+            await update.message.reply_text(
+                f"File is too large (max {MAX_MEDIA_SIZE_MB}MB). Please send a smaller file."
+            )
+            context.user_data['awaiting_post_media'] = True
+            return
+
+        # Validate extension
+        ext = Path(file_name).suffix.lower()
+        if ext not in SUPPORTED_MEDIA_EXTENSIONS:
+            await update.message.reply_text(
+                f"Unsupported format ({ext}). Supported: JPG, PNG, GIF, MP4, MOV.\n\n"
+                "Please send a supported file."
+            )
+            context.user_data['awaiting_post_media'] = True
+            return
+
+        # Download file
+        tg_file = await context.bot.get_file(file_id)
+        local_path = UPLOAD_DIR / f"{telegram_id}_{uuid.uuid4().hex[:8]}{ext}"
+        await tg_file.download_to_drive(str(local_path))
+
+        # Remove any previously attached media
+        old_media = context.user_data.get('post_media')
+        if old_media:
+            try:
+                Path(old_media).unlink(missing_ok=True)
+            except Exception:
+                pass
+
+        context.user_data['post_media'] = str(local_path)
+
+        # Re-show preview with media attached
+        generated_post = context.user_data.get('generated_post', '')
+        if not generated_post:
+            await update.message.reply_text("Media attached, but no post content found. Use /post to start over.")
+            return
+
+        keyboard = _build_post_preview_keyboard(telegram_id, context, is_ai=True)
+        media_line = _media_status_line(context)
+
+        await update.message.reply_text(
+            f"📝 *Post Preview:*\n\n"
+            f"{'─' * 40}\n\n"
+            f"{generated_post}\n\n"
+            f"{'─' * 40}\n"
+            f"{media_line}\n"
+            f"Choose how to post:\n"
+            f"📱 *Mobile*: Opens on your phone (recommended)\n"
+            f"🖥️ *Browser*: Opens on server (visible automation)",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+
+    except Exception as e:
+        logger.error(f"Error handling post media upload for user {telegram_id}: {e}")
+        await update.message.reply_text(f"Failed to process media: {str(e)}\n\nPlease try again.")
+        context.user_data['awaiting_post_media'] = True
+
+
+def generate_post_from_templates(industry, skills, themes):
+    """Generate a post from randomized offline templates (5 distinct formats).
+    Used as fallback when AI service is unavailable."""
+    import random
+
+    first_skill = skills.split(',')[0].strip() if skills else 'technology'
+    first_theme = themes.split(',')[0].strip() if themes else 'industry insights'
+    skill_tags = [f"#{s.strip().replace(' ', '')}" for s in skills.split(',')[:3]]
+    hashtags = f"#{first_theme.replace(' ', '')} {' '.join(skill_tags)}"
+
+    # ── Shared component pools ──
+    hooks_story = [
+        f"I spent the last few weeks rethinking how I approach {first_theme}.",
+        f"Something happened last week that changed my perspective on {first_theme}.",
+        f"A conversation with a colleague made me question everything I knew about {first_theme}.",
+        f"I've been quietly experimenting with {first_theme} and the results surprised me.",
+    ]
+    hooks_lesson = [
+        f"I wasted days trying to solve a {first_theme} problem the wrong way.",
+        f"I failed at {first_theme} before I figured out what actually works.",
+        f"The hardest lesson I learned about {first_theme} wasn't technical.",
+        f"Three months ago I was doing {first_theme} completely wrong.",
+    ]
+    hooks_hottake = [
+        f"Unpopular opinion: most people are overthinking {first_theme}.",
+        f"Hot take: {first_theme} doesn't need more tools. It needs more clarity.",
+        f"Everyone's talking about {first_theme} but nobody's addressing the real problem.",
+        f"Controversial thought: the {industry} industry has {first_theme} backwards.",
+    ]
+    hooks_before_after = [
+        f"6 months ago my approach to {first_theme} was completely different.",
+        f"I used to think {first_theme} required complex solutions. I was wrong.",
+        f"My {first_theme} workflow before vs. after — night and day.",
+    ]
+    hooks_question = [
+        f"What if everything we think about {first_theme} is outdated?",
+        f"Why do so few people in {industry} talk honestly about {first_theme}?",
+        f"Has anyone else noticed this pattern with {first_theme}?",
+    ]
+
+    checklist_items = [
+        f"☑️ Map out the real problem before jumping to solutions",
+        f"☑️ Focus on {first_skill} fundamentals, not shiny tools",
+        f"☑️ Get feedback early instead of building in isolation",
+        f"☑️ Document what works (and what doesn't)",
+        f"☑️ Simplify ruthlessly before adding complexity",
+        f"☑️ Challenge your own assumptions first",
+    ]
+    result_items = [
+        f"✅ Reduced time spent on repetitive work by focusing on what matters",
+        f"✅ Built a process that actually adapts when things change",
+        f"✅ Started getting better results with less effort",
+        f"✅ Found clarity by stripping away unnecessary complexity",
+        f"✅ Learned to trust the fundamentals of {first_skill}",
+        f"✅ Stopped chasing trends and doubled down on what works",
+    ]
+    lessons = [
+        f"The real skill isn't knowing more. It's knowing what to ignore.",
+        f"Simple systems beat complicated ones every time.",
+        f"Clear thinking is the most underrated {industry} skill.",
+        f"Consistency beats intensity. Every single time.",
+        f"The best approach is the one you'll actually stick with.",
+    ]
+    transitions = [
+        "Here's what I've found:",
+        "What nobody tells you:",
+        "Here's what actually happened:",
+        "The truth is simpler than you think:",
+        "Here's the part nobody talks about:",
+    ]
+    questions_pool = [
+        f"What's your approach to {first_theme}? I'd genuinely like to know.",
+        f"Has anyone else run into this with {first_theme}?",
+        f"What would you add to this? Drop your thoughts below.",
+        f"Am I the only one who sees it this way?",
+        f"What's the most counterintuitive thing you've learned about {first_theme}?",
+        f"Would love to hear how others in {industry} handle this.",
+    ]
+
+    # ── Format A: Story Arc ──
+    def format_story_arc():
+        hook = random.choice(hooks_story)
+        checks = random.sample(checklist_items, 3)
+        results = random.sample(result_items, 3)
+        lesson = random.choice(lessons)
+        question = random.choice(questions_pool)
+        return (
+            f"{hook}\n\n"
+            f"The concept is straightforward:\n"
+            f"{checks[0]}\n{checks[1]}\n{checks[2]}\n\n"
+            f"{random.choice(transitions)}\n\n"
+            f"{results[0]}\n{results[1]}\n{results[2]}\n\n"
+            f"{lesson}\n\n"
+            f"{question}\n\n"
+            f"{hashtags}"
+        )
+
+    # ── Format B: Lesson Learned ──
+    def format_lesson_learned():
+        hook = random.choice(hooks_lesson)
+        checks = random.sample(checklist_items, 2)
+        results = random.sample(result_items, 3)
+        lesson = random.choice(lessons)
+        question = random.choice(questions_pool)
+        return (
+            f"{hook}\n\n"
+            f"What I tried first:\n"
+            f"{checks[0]}\n{checks[1]}\n\n"
+            f"Nothing clicked — until I changed my approach entirely.\n\n"
+            f"What actually worked:\n\n"
+            f"{results[0]}\n{results[1]}\n{results[2]}\n\n"
+            f"The takeaway?\n\n"
+            f"{lesson}\n\n"
+            f"{question}\n\n"
+            f"{hashtags}"
+        )
+
+    # ── Format C: Hot Take ──
+    def format_hot_take():
+        hook = random.choice(hooks_hottake)
+        results = random.sample(result_items, 3)
+        lesson = random.choice(lessons)
+        question = random.choice(questions_pool)
+        return (
+            f"{hook}\n\n"
+            f"I know that sounds strong.\n\n"
+            f"But here's what I'm actually seeing:\n\n"
+            f"{results[0]}\n{results[1]}\n{results[2]}\n\n"
+            f"That's not innovation.\n\nThat's noise.\n\n"
+            f"{lesson}\n\n"
+            f"{question}\n\n"
+            f"{hashtags}"
+        )
+
+    # ── Format D: Before/After ──
+    def format_before_after():
+        hook = random.choice(hooks_before_after)
+        checks = random.sample(checklist_items, 3)
+        results = random.sample(result_items, 3)
+        lesson = random.choice(lessons)
+        question = random.choice(questions_pool)
+        return (
+            f"{hook}\n\n"
+            f"Before:\n"
+            f"{checks[0]}\n{checks[1]}\n{checks[2]}\n\n"
+            f"Then I stripped everything back to basics.\n\n"
+            f"After:\n\n"
+            f"{results[0]}\n{results[1]}\n{results[2]}\n\n"
+            f"The difference wasn't just efficiency.\n\n"
+            f"{lesson}\n\n"
+            f"{question}\n\n"
+            f"{hashtags}"
+        )
+
+    # ── Format E: Question-Led ──
+    def format_question_led():
+        hook = random.choice(hooks_question)
+        results = random.sample(result_items, 3)
+        lesson = random.choice(lessons)
+        question = random.choice(questions_pool)
+        return (
+            f"{hook}\n\n"
+            f"I've been thinking about this a lot lately.\n\n"
+            f"Here's what I've observed:\n\n"
+            f"{results[0]}\n{results[1]}\n{results[2]}\n\n"
+            f"{random.choice(transitions)}\n\n"
+            f"{lesson}\n\n"
+            f"{question}\n\n"
+            f"{hashtags}"
+        )
+
+    formats = [format_story_arc, format_lesson_learned, format_hot_take,
+               format_before_after, format_question_led]
+    return random.choice(formats)()
+
+
 async def post_command_generate_ai(query_or_update, context: ContextTypes.DEFAULT_TYPE):
     """Generate AI content and show preview.
+    Tries AI service (Claude API) first, falls back to offline templates.
     Accepts either a CallbackQuery or a Message as first arg."""
     import random
 
@@ -1789,7 +2217,7 @@ async def post_command_generate_ai(query_or_update, context: ContextTypes.DEFAUL
     try:
         user_profile = db.get_user_profile(telegram_id)
         if not user_profile:
-            await reply_msg.reply_text("❌ No profile found. Complete onboarding with /start first.")
+            await reply_msg.reply_text("No profile found. Complete onboarding with /start first.")
             return
 
         try:
@@ -1806,74 +2234,50 @@ async def post_command_generate_ai(query_or_update, context: ContextTypes.DEFAUL
 
         industry = ', '.join(profile_data.get('industry', ['professional']))
         skills   = ', '.join(profile_data.get('skills',   ['technology']))
-        themes   = ', '.join(content_strategy.get('content_themes', ['industry insights']))
+        themes   = content_strategy.get('content_themes', ['industry insights'])
+        tone     = ', '.join(profile_data.get('tone', ['professional']))
+        goals    = ', '.join(profile_data.get('career_goals', ['career growth']))
 
-        hooks = [
-            f"I recently had a conversation that completely changed how I think about {themes}. 🤔",
-            f"Here's something I wish someone had told me earlier in my {industry} journey... 💡",
-            f"After years working in {industry}, I've learned that breakthroughs come from unexpected places. 🌟",
-            f"Last week, I was reminded why {themes} matters more than ever in today's {industry} landscape. 🚀",
-            f"Something happened while working on {themes} that I think you'll find valuable. ✨"
-        ]
-        insights = [
-            f"💎 {themes.split(',')[0].strip().title()} isn't just about what you know — it's how you apply it.",
-            f"🎯 Success in {industry} comes from combining {skills.split(',')[0].strip()} with genuine curiosity.",
-            f"🔥 The most valuable skill isn't always technical — it's the ability to adapt.",
-            f"⚡ Innovation happens at the intersection of {skills.split(',')[0].strip()} and creative problem-solving.",
-            f"🌱 Growth mindset + {skills.split(',')[0].strip()} = unstoppable professional development."
-        ]
-        actions = [
-            "📌 Focus on building genuine connections, not just collecting contacts",
-            "📌 Share your knowledge freely — what you give comes back multiplied",
-            "📌 Ask better questions instead of just seeking quick answers",
-            "📌 Embrace failure as feedback, not as a setback",
-            "📌 Stay curious and never stop learning from those around you"
-        ]
-        questions = [
-            "What's been your biggest learning moment this year? 👇",
-            "How do you approach continuous learning in your field? 💬",
-            "What strategies have worked for you? Drop your insights below! 🗣️",
-            "Have you experienced something similar? Let's discuss! 💭",
-            "What's your take on this? Share your perspective! 🤝"
-        ]
+        themes_str = ', '.join(themes) if isinstance(themes, list) else str(themes)
+        theme_for_ai = random.choice(themes) if isinstance(themes, list) and themes else themes_str
 
-        selected_insights = random.sample(insights, 3)
-        selected_actions  = random.sample(actions, 3)
-        skill_tags = [f"#{s.strip().replace(' ', '')}" for s in skills.split(',')[:2]]
-        hashtags   = f"#LinkedIn #ProfessionalGrowth {' '.join(skill_tags)}"
+        # ── Try AI service (Claude API) first ──
+        generated_post = None
+        try:
+            from ai.ai_service import AIService
+            ai_svc = AIService()
+            if ai_svc.client:
+                ai_profile = {
+                    'industry': industry,
+                    'skills': skills,
+                    'career_goals': goals,
+                    'tone': tone,
+                }
+                generated_post = ai_svc.generate_post(theme=theme_for_ai, user_profile=ai_profile)
+                if generated_post:
+                    logger.info(f"AI-generated post for user {telegram_id} (theme: {theme_for_ai})")
+        except Exception as e:
+            logger.warning(f"AI service unavailable, using template fallback: {e}")
 
-        generated_post = (
-            f"{random.choice(hooks)}\n\n"
-            f"Here's what I've discovered:\n\n"
-            f"{selected_insights[0]}\n\n"
-            f"{selected_insights[1]}\n\n"
-            f"{selected_insights[2]}\n\n"
-            f"Three things that have helped me:\n\n"
-            f"{selected_actions[0]}\n"
-            f"{selected_actions[1]}\n"
-            f"{selected_actions[2]}\n\n"
-            f"{random.choice(questions)}\n\n"
-            f"{hashtags}"
-        )
+        # ── Fallback to offline templates ──
+        if not generated_post:
+            generated_post = generate_post_from_templates(industry, skills, themes_str)
+            logger.info(f"Template-generated post for user {telegram_id}")
 
         post_id = str(uuid.uuid4())[:8]
 
-        keyboard = [
-            [InlineKeyboardButton("📱 Post on Mobile (Copy & Paste)", callback_data='post_mobile')],
-            [InlineKeyboardButton("🖥️ Post with Browser (Server)", callback_data=f'post_approve_{telegram_id}')],
-            [InlineKeyboardButton("🔄 Generate New", callback_data='post_ai_generate')],
-            [InlineKeyboardButton("✏️ Write My Own Instead", callback_data='post_write_own')],
-            [InlineKeyboardButton("❌ Discard", callback_data='post_discard')],
-        ]
-
         context.user_data['generated_post'] = generated_post
         context.user_data['post_id'] = post_id
+
+        keyboard = _build_post_preview_keyboard(telegram_id, context, is_ai=True)
+        media_line = _media_status_line(context)
 
         await reply_msg.reply_text(
             f"📝 *Generated Post Preview:*\n\n"
             f"{'─' * 40}\n\n"
             f"{generated_post}\n\n"
-            f"{'─' * 40}\n\n"
+            f"{'─' * 40}\n"
+            f"{media_line}\n"
             f"Choose how to post:\n"
             f"📱 *Mobile*: Opens on your phone (recommended)\n"
             f"🖥️ *Browser*: Opens on server (visible automation)",
@@ -1886,7 +2290,7 @@ async def post_command_generate_ai(query_or_update, context: ContextTypes.DEFAUL
         await reply_msg.reply_text(f"❌ Error generating content: {str(e)}\n\nPlease try again later.")
 
 
-def run_post_visible_browser(telegram_id: int, generated_post: str):
+def run_post_visible_browser(telegram_id: int, generated_post: str, media_path: str = None):
     """Legacy threading function - fallback only"""
     global application
     bot = application.bot if application else None
@@ -1932,13 +2336,20 @@ def run_post_visible_browser(telegram_id: int, generated_post: str):
 
         # Create the post
         logger.info(f"Creating LinkedIn post for user {telegram_id}")
-        success = linkedin_bot.create_post(generated_post)
+        success = linkedin_bot.create_post(generated_post, media_path)
 
         # Take screenshot after posting
         if success:
             take_screenshot("post_success", "Post Created Successfully")
 
         linkedin_bot.stop()
+
+        # Clean up uploaded media file
+        if media_path:
+            try:
+                Path(media_path).unlink(missing_ok=True)
+            except Exception:
+                pass
 
         if success:
             db.log_automation_action(telegram_id, 'post', 1)
@@ -1962,6 +2373,12 @@ def run_post_visible_browser(telegram_id: int, generated_post: str):
                     screenshot_queue.add_screenshot(telegram_id, path, f"Post Error: {str(e)[:50]}")
             except Exception:
                 pass
+        # Clean up media on error too
+        if media_path:
+            try:
+                Path(media_path).unlink(missing_ok=True)
+            except Exception:
+                pass
         notify_user(f"Posting encountered an error: {str(e)}\n\nPlease try again or contact support.")
 
 
@@ -1980,21 +2397,18 @@ async def handle_custom_post_text(update: Update, context: ContextTypes.DEFAULT_
     telegram_id = update.effective_user.id
     post_id = str(uuid.uuid4())[:8]
 
-    keyboard = [
-        [InlineKeyboardButton("📱 Post on Mobile (Copy & Paste)", callback_data='post_mobile')],
-        [InlineKeyboardButton("🖥️ Post with Browser (Server)", callback_data=f'post_approve_{telegram_id}')],
-        [InlineKeyboardButton("✏️ Edit & Retype", callback_data='post_write_own')],
-        [InlineKeyboardButton("❌ Discard", callback_data='post_discard')],
-    ]
-
     context.user_data['generated_post'] = custom_post
     context.user_data['post_id'] = post_id
+
+    keyboard = _build_post_preview_keyboard(telegram_id, context, is_ai=False)
+    media_line = _media_status_line(context)
 
     await update.message.reply_text(
         f"📝 *Your Post Preview:*\n\n"
         f"{'─' * 40}\n\n"
         f"{custom_post}\n\n"
-        f"{'─' * 40}\n\n"
+        f"{'─' * 40}\n"
+        f"{media_line}\n"
         f"Choose how to post:\n"
         f"📱 *Mobile*: Opens on your phone (recommended)\n"
         f"🖥️ *Browser*: Opens on server (visible automation)",
@@ -2028,9 +2442,54 @@ async def handle_post_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     if query.data == 'post_discard':
+        # Clean up any uploaded media file
+        media_path = context.user_data.pop('post_media', None)
+        if media_path:
+            try:
+                Path(media_path).unlink(missing_ok=True)
+            except Exception:
+                pass
         await query.edit_message_text("❌ Post discarded.")
         context.user_data.pop('generated_post', None)
         context.user_data.pop('awaiting_custom_post', None)
+        context.user_data.pop('awaiting_post_media', None)
+        return
+
+    if query.data == 'post_attach_media':
+        context.user_data['awaiting_post_media'] = True
+        await query.edit_message_text(
+            "📷 *Attach Media to Your Post*\n\n"
+            "Send a photo or file to attach.\n\n"
+            "Supported formats: JPG, PNG, GIF, MP4, MOV\n"
+            f"Max size: {MAX_MEDIA_SIZE_MB}MB",
+            parse_mode='Markdown'
+        )
+        return
+
+    if query.data == 'post_remove_media':
+        media_path = context.user_data.pop('post_media', None)
+        if media_path:
+            try:
+                Path(media_path).unlink(missing_ok=True)
+            except Exception:
+                pass
+        # Re-show preview without media
+        telegram_id = update.effective_user.id
+        generated_post = context.user_data.get('generated_post', '')
+        keyboard = _build_post_preview_keyboard(telegram_id, context, is_ai=True)
+        media_line = _media_status_line(context)
+        await query.edit_message_text(
+            f"📝 *Post Preview:*\n\n"
+            f"{'─' * 40}\n\n"
+            f"{generated_post}\n\n"
+            f"{'─' * 40}\n"
+            f"{media_line}\n"
+            f"Choose how to post:\n"
+            f"📱 *Mobile*: Opens on your phone (recommended)\n"
+            f"🖥️ *Browser*: Opens on server (visible automation)",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
         return
 
     if query.data == 'post_mobile':
@@ -2069,6 +2528,13 @@ async def handle_post_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             , parse_mode='Markdown'
         )
         context.user_data.pop('generated_post', None)
+        # Clean up media if user posted manually
+        media_path = context.user_data.pop('post_media', None)
+        if media_path:
+            try:
+                Path(media_path).unlink(missing_ok=True)
+            except Exception:
+                pass
         return
 
     if query.data == 'post_regenerate':
@@ -2083,11 +2549,14 @@ async def handle_post_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             await query.edit_message_text("❌ Error: Post content not found. Please generate again with /post")
             return
 
+        media_path = context.user_data.get('post_media')
+        media_note = "\n📎 Your attached media will be included." if media_path else ""
+
         await query.edit_message_text(
             "✅ *Post Approved!*\n\n"
             "🚀 *Automation Starting...*\n\n"
             "🖥️ *Remote Processing:*\n"
-            "Your post is being published on our secure remote servers.\n\n"
+            f"Your post is being published on our secure remote servers.{media_note}\n\n"
             "📸 *Live Updates:*\n"
             "Watch your progress! Screenshots and updates will be sent showing:\n"
             "  • LinkedIn sign-in progress\n"
@@ -2101,9 +2570,9 @@ async def handle_post_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         # Run posting with visible browser in background thread
         try:
             if CELERY_ENABLED:
-                post_to_linkedin_task.delay(telegram_id, generated_post)
+                post_to_linkedin_task.delay(telegram_id, generated_post, media=media_path)
             else:
-                Thread(target=run_post_visible_browser, args=(telegram_id, generated_post)).start()
+                Thread(target=run_post_visible_browser, args=(telegram_id, generated_post, media_path)).start()
         except Exception as e:
             logger.error(f"Failed to start posting task for user {telegram_id}: {e}")
             await query.message.reply_text(
@@ -2111,9 +2580,10 @@ async def handle_post_callback(update: Update, context: ContextTypes.DEFAULT_TYP
                 "Please try again in a few minutes."
             )
 
-        # Clear context
-        if 'generated_post' in context.user_data:
-            del context.user_data['generated_post']
+        # Clear context (don't delete media file — posting task needs it)
+        context.user_data.pop('generated_post', None)
+        context.user_data.pop('post_media', None)
+        context.user_data.pop('awaiting_post_media', None)
 
 
 async def handle_web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2928,7 +3398,7 @@ def main():
     # Add callback handlers for post management
     application.add_handler(CallbackQueryHandler(
         handle_post_callback,
-        pattern='^(post_approve_|post_regenerate|post_discard|post_ai_generate|post_write_own|post_mobile|post_confirmed)'
+        pattern='^(post_approve_|post_regenerate|post_discard|post_ai_generate|post_write_own|post_mobile|post_confirmed|post_attach_media|post_remove_media)'
     ))
 
     # Add callback handlers for schedule management
@@ -2965,6 +3435,12 @@ def main():
         handle_jobsearch_callback,
         pattern='^(jobscan_now|jobscan_toggle|jobscan_edit)$'
     ))
+    # Post media upload handler (photo or document — only active when awaiting_post_media)
+    # Registered in group 1 so it runs independently of other handlers
+    application.add_handler(MessageHandler(
+        filters.PHOTO | filters.Document.IMAGE | filters.Document.VIDEO,
+        handle_post_media_upload
+    ), group=1)
     # PDF resume handler (outside conversation — user can upload anytime)
     application.add_handler(MessageHandler(filters.Document.PDF, handle_resume_upload))
 

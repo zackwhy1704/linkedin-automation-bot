@@ -198,6 +198,14 @@ def post_to_linkedin_task(self, telegram_id: int, content: str, media: str = Non
             return {'success': False, 'error': str(e)}
 
     finally:
+        # Clean up uploaded media file
+        if media:
+            try:
+                import os
+                if os.path.exists(media):
+                    os.remove(media)
+            except Exception:
+                pass
         # Return browser to pool
         if browser_context:
             browser_pool.release(browser_context)
