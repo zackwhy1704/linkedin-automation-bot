@@ -3366,5 +3366,910 @@ class TestSubscriptionLifecycle(unittest.TestCase):
         self.assertIn("January", call_text)  # 1735689600 = Jan 1, 2025
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# STRIPE v14 API COMPATIBILITY TESTS
+# Tests for current_period_end migration (subscription-level → item-level)
+# ═══════════════════════════════════════════════════════════════════════════
+
+@unittest.skipUnless(FLASK_AVAILABLE, "Flask not installed")
+class TestGetSubscriptionPeriodEnd(unittest.TestCase):
+    """Test _get_subscription_period_end helper for Stripe API compatibility."""
+
+    def test_dict_with_current_period_end(self):
+        """Old-style dict with current_period_end at top level."""
+        from payment_server import _get_subscription_period_end
+        sub = {'current_period_end': 1735689600}
+        self.assertEqual(_get_subscription_period_end(sub), 1735689600)
+
+    def test_object_with_current_period_end_attr(self):
+        """Stripe object with current_period_end as attribute."""
+        from payment_server import _get_subscription_period_end
+        sub = MagicMock()
+        sub.current_period_end = 1735689600
+        sub.get = MagicMock(side_effect=KeyError)
+        result = _get_subscription_period_end(sub)
+        self.assertEqual(result, 1735689600)
+
+    def test_new_api_item_level_period_end(self):
+        """Stripe v14+ API: current_period_end on items.data[0]."""
+        from payment_server import _get_subscription_period_end
+        sub = MagicMock()
+        sub.current_period_end = None  # Removed from subscription level
+        sub.get = MagicMock(side_effect=KeyError)
+
+        item = MagicMock()
+        item.current_period_end = 1735689600
+        sub.items.data = [item]
+
+        result = _get_subscription_period_end(sub)
+        self.assertEqual(result, 1735689600)
+
+    def test_fallback_to_cancel_at(self):
+        """When current_period_end is missing everywhere, fall back to cancel_at."""
+        from payment_server import _get_subscription_period_end
+        sub = MagicMock()
+        sub.current_period_end = None
+        sub.items.data = []  # No items
+        sub.cancel_at = 1735689600
+        sub.get = MagicMock(side_effect=KeyError)
+
+        result = _get_subscription_period_end(sub)
+        self.assertEqual(result, 1735689600)
+
+    def test_all_none_returns_none(self):
+        """When nothing is available, return None."""
+        from payment_server import _get_subscription_period_end
+        sub = MagicMock()
+        sub.current_period_end = None
+        sub.items.data = []
+        sub.cancel_at = None
+        sub.get = MagicMock(side_effect=KeyError)
+
+        result = _get_subscription_period_end(sub)
+        self.assertIsNone(result)
+
+    def test_dict_without_current_period_end(self):
+        """Dict without current_period_end should return None."""
+        from payment_server import _get_subscription_period_end
+        sub = {'id': 'sub_123', 'customer': 'cus_123'}
+        result = _get_subscription_period_end(sub)
+        self.assertIsNone(result)
+
+
+@unittest.skipUnless(FLASK_AVAILABLE, "Flask not installed")
+class TestSubscriptionUpdatedStripeV14(unittest.TestCase):
+    """Test handle_subscription_updated with Stripe v14 object format."""
+
+    @patch('payment_server.send_telegram_notification')
+    @patch('payment_server.db')
+    def test_cancel_with_stripe_object(self, mock_db, mock_notify):
+        """Stripe v14 object with attribute access should work for cancellation."""
+        mock_db.execute_query.return_value = {
+            'telegram_id': 12345,
+            'username': 'testuser',
+            'first_name': 'Test',
+        }
+
+        from payment_server import handle_subscription_updated
+
+        # Simulate Stripe v14 object (attribute access)
+        sub = MagicMock()
+        sub.customer = 'cus_v14'
+        sub.id = 'sub_v14'
+        sub.cancel_at_period_end = True
+        sub.status = 'active'
+        sub.current_period_end = None  # Removed in new API
+        sub.cancel_at = None
+        sub.get = MagicMock(side_effect=KeyError)
+
+        # Period end is on items
+        item = MagicMock()
+        item.current_period_end = 1735689600
+        sub.items.data = [item]
+
+        handle_subscription_updated(sub)
+
+        mock_notify.assert_called_once()
+        notify_text = mock_notify.call_args[0][1]
+        self.assertIn("Cancelled Successfully", notify_text)
+        self.assertIn("January", notify_text)  # 1735689600 = Jan 1, 2025
+
+    @patch('payment_server.send_telegram_notification')
+    @patch('payment_server.db')
+    def test_cancel_without_period_end(self, mock_db, mock_notify):
+        """Cancellation when current_period_end not available anywhere."""
+        mock_db.execute_query.return_value = {
+            'telegram_id': 12345,
+            'username': 'testuser',
+            'first_name': 'Test',
+        }
+
+        from payment_server import handle_subscription_updated
+
+        sub = MagicMock()
+        sub.customer = 'cus_test'
+        sub.id = 'sub_test'
+        sub.cancel_at_period_end = True
+        sub.status = 'active'
+        sub.current_period_end = None
+        sub.cancel_at = None
+        sub.items.data = []
+        sub.get = MagicMock(side_effect=KeyError)
+
+        handle_subscription_updated(sub)
+
+        mock_notify.assert_called_once()
+        notify_text = mock_notify.call_args[0][1]
+        self.assertIn("Cancelled Successfully", notify_text)
+        self.assertIn("billing period end", notify_text)
+
+    @patch('payment_server.send_telegram_notification')
+    @patch('payment_server.db')
+    def test_reactivation_with_stripe_object(self, mock_db, mock_notify):
+        """Stripe v14 object: reactivation should work with attribute access."""
+        mock_db.execute_query.return_value = {
+            'telegram_id': 12345,
+            'username': 'testuser',
+            'first_name': 'Test',
+        }
+
+        from payment_server import handle_subscription_updated
+
+        sub = MagicMock()
+        sub.customer = 'cus_v14'
+        sub.id = 'sub_v14'
+        sub.cancel_at_period_end = False
+        sub.status = 'active'
+        sub.current_period_end = 1735689600
+        sub.get = MagicMock(side_effect=KeyError)
+
+        handle_subscription_updated(sub)
+
+        mock_notify.assert_called_once()
+        notify_text = mock_notify.call_args[0][1]
+        self.assertIn("Reactivated", notify_text)
+
+    @patch('payment_server.send_telegram_notification')
+    @patch('payment_server.db')
+    def test_cancel_with_dict_format_still_works(self, mock_db, mock_notify):
+        """Original dict format should still work for backward compatibility."""
+        mock_db.execute_query.return_value = {
+            'telegram_id': 12345,
+            'username': 'testuser',
+            'first_name': 'Test',
+        }
+
+        from payment_server import handle_subscription_updated
+
+        subscription = {
+            'id': 'sub_dict',
+            'customer': 'cus_dict',
+            'cancel_at_period_end': True,
+            'status': 'active',
+            'current_period_end': 1735689600,
+        }
+
+        handle_subscription_updated(subscription)
+
+        mock_notify.assert_called_once()
+        notify_text = mock_notify.call_args[0][1]
+        self.assertIn("Cancelled Successfully", notify_text)
+        self.assertIn("January", notify_text)
+
+
+@unittest.skipUnless(FLASK_AVAILABLE, "Flask not installed")
+class TestSubscriptionDeletedStripeV14(unittest.TestCase):
+    """Test handle_subscription_deleted with Stripe v14 object format."""
+
+    @patch('payment_server.send_telegram_notification')
+    @patch('payment_server.db')
+    def test_deleted_with_stripe_object(self, mock_db, mock_notify):
+        """Stripe v14 object should work for subscription deletion."""
+        mock_db.execute_query.return_value = {'telegram_id': 12345}
+
+        from payment_server import handle_subscription_deleted
+
+        sub = MagicMock()
+        sub.customer = 'cus_v14'
+        sub.id = 'sub_v14'
+        sub.get = MagicMock(side_effect=KeyError)
+
+        handle_subscription_deleted(sub)
+
+        mock_db.deactivate_subscription.assert_called_once_with(12345)
+        mock_notify.assert_called_once()
+        notify_text = mock_notify.call_args[0][1]
+        self.assertIn("Subscription Ended", notify_text)
+
+    @patch('payment_server.send_telegram_notification')
+    @patch('payment_server.db')
+    def test_deleted_with_dict_format(self, mock_db, mock_notify):
+        """Dict format should still work for subscription deletion."""
+        mock_db.execute_query.return_value = {'telegram_id': 12345}
+
+        from payment_server import handle_subscription_deleted
+
+        subscription = {
+            'id': 'sub_dict',
+            'customer': 'cus_dict',
+        }
+
+        handle_subscription_deleted(subscription)
+
+        mock_db.deactivate_subscription.assert_called_once_with(12345)
+        mock_notify.assert_called_once()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# END-TO-END PAYMENT FLOW TESTS
+# Complete lifecycle: checkout → webhook → DB → notification → gating
+# ═══════════════════════════════════════════════════════════════════════════
+
+@unittest.skipUnless(FLASK_AVAILABLE, "Flask not installed")
+class TestE2ECheckoutToActive(unittest.TestCase):
+    """End-to-end: checkout.session.completed → subscription active → commands work."""
+
+    @patch('payment_server.send_telegram_notification')
+    @patch('payment_server.db')
+    def test_checkout_activates_then_commands_accessible(self, mock_db, mock_notify):
+        """After checkout webhook, subscription should be active."""
+        from payment_server import handle_checkout_session_completed
+
+        session = {
+            'id': 'cs_e2e_test',
+            'customer': 'cus_e2e',
+            'subscription': 'sub_e2e',
+            'client_reference_id': '99999',
+            'metadata': {'telegram_id': '99999'},
+        }
+
+        handle_checkout_session_completed(session)
+
+        mock_db.activate_subscription.assert_called_once_with(
+            99999,
+            stripe_customer_id='cus_e2e',
+            stripe_subscription_id='sub_e2e',
+            days=30
+        )
+        mock_notify.assert_called_once()
+        self.assertIn("Payment Successful", mock_notify.call_args[0][1])
+
+
+@unittest.skipUnless(FLASK_AVAILABLE, "Flask not installed")
+class TestE2ECancelViaPortal(unittest.TestCase):
+    """End-to-end: user cancels via Stripe portal → webhook → pending cancel → period end → deactivated."""
+
+    @patch('payment_server.send_telegram_notification')
+    @patch('payment_server.db')
+    def test_portal_cancel_then_period_end_deactivation(self, mock_db, mock_notify):
+        """Full cancel flow: subscription.updated (cancel_at_period_end) → subscription.deleted."""
+        from payment_server import handle_subscription_updated, handle_subscription_deleted
+
+        mock_db.execute_query.return_value = {
+            'telegram_id': 12345,
+            'username': 'testuser',
+            'first_name': 'Test',
+        }
+
+        # Step 1: User cancels via Stripe portal → subscription.updated webhook
+        sub_updated = {
+            'id': 'sub_e2e_cancel',
+            'customer': 'cus_e2e_cancel',
+            'cancel_at_period_end': True,
+            'status': 'active',
+            'current_period_end': 1735689600,
+        }
+        handle_subscription_updated(sub_updated)
+
+        # Verify: cancellation_pending set, notification sent
+        self.assertEqual(mock_notify.call_count, 1)
+        notify_text = mock_notify.call_args[0][1]
+        self.assertIn("Cancelled Successfully", notify_text)
+        self.assertIn("January", notify_text)
+        # DB update should set subscription_expires and cancellation_pending
+        update_call = mock_db.execute_query.call_args_list[-1]
+        self.assertIn('cancellation_pending', update_call[0][0])
+
+        mock_notify.reset_mock()
+        mock_db.reset_mock()
+
+        # Step 2: Billing period ends → subscription.deleted webhook
+        mock_db.execute_query.return_value = {'telegram_id': 12345}
+        sub_deleted = {
+            'id': 'sub_e2e_cancel',
+            'customer': 'cus_e2e_cancel',
+        }
+        handle_subscription_deleted(sub_deleted)
+
+        # Verify: subscription deactivated, final notification
+        mock_db.deactivate_subscription.assert_called_once_with(12345)
+        self.assertEqual(mock_notify.call_count, 1)
+        self.assertIn("Subscription Ended", mock_notify.call_args[0][1])
+
+
+class TestE2EForceCancel(unittest.TestCase):
+    """End-to-end: user force cancels via bot → Stripe API → DB updated."""
+
+    @patch('multiuser.telegram_bot_multiuser.stripe')
+    @patch('multiuser.telegram_bot_multiuser.db')
+    def test_force_cancel_updates_db_and_shows_message(self, mock_db, mock_stripe):
+        """force_cancel_sub callback should call Stripe API and update DB."""
+        import stripe as real_stripe
+        from multiuser.telegram_bot_multiuser import handle_cancel_subscription_callback
+
+        mock_db.get_user.return_value = {
+            'subscription_active': True,
+            'stripe_customer_id': 'cus_force',
+            'stripe_subscription_id': 'sub_force',
+        }
+        mock_stripe.error = real_stripe.error
+
+        # Simulate v14 Stripe subscription object
+        mock_sub = MagicMock()
+        mock_sub.current_period_end = None  # v14: removed from top level
+        mock_sub.cancel_at = None
+        item = MagicMock()
+        item.current_period_end = 1735689600
+        mock_sub.items = MagicMock()
+        mock_sub.items.data = [item]
+        mock_stripe.Subscription.modify.return_value = mock_sub
+
+        update = make_update(callback_data='force_cancel_sub', user_id=12345)
+        context = make_context()
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(handle_cancel_subscription_callback(update, context))
+        loop.close()
+
+        mock_stripe.Subscription.modify.assert_called_once_with(
+            'sub_force', cancel_at_period_end=True
+        )
+        call_text = update.callback_query.edit_message_text.call_args[0][0]
+        self.assertIn("Cancelled", call_text)
+        self.assertIn("January", call_text)
+
+    @patch('multiuser.telegram_bot_multiuser.stripe')
+    @patch('multiuser.telegram_bot_multiuser.db')
+    def test_force_cancel_no_period_end_graceful(self, mock_db, mock_stripe):
+        """force_cancel should handle missing period_end gracefully."""
+        import stripe as real_stripe
+        from multiuser.telegram_bot_multiuser import handle_cancel_subscription_callback
+
+        mock_db.get_user.return_value = {
+            'subscription_active': True,
+            'stripe_customer_id': 'cus_force',
+            'stripe_subscription_id': 'sub_force',
+        }
+        mock_stripe.error = real_stripe.error
+
+        mock_sub = MagicMock()
+        mock_sub.current_period_end = None
+        mock_sub.cancel_at = None
+        mock_sub.items = MagicMock()
+        mock_sub.items.data = []
+        mock_stripe.Subscription.modify.return_value = mock_sub
+
+        update = make_update(callback_data='force_cancel_sub', user_id=12345)
+        context = make_context()
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(handle_cancel_subscription_callback(update, context))
+        loop.close()
+
+        call_text = update.callback_query.edit_message_text.call_args[0][0]
+        self.assertIn("Cancelled", call_text)
+        self.assertIn("billing period end", call_text)
+
+
+@unittest.skipUnless(FLASK_AVAILABLE, "Flask not installed")
+class TestE2EPaymentFailedToDeactivation(unittest.TestCase):
+    """End-to-end: payment fails → warnings → final fail → deactivation."""
+
+    @patch('payment_server.send_telegram_notification')
+    @patch('payment_server.db')
+    def test_retry_then_final_failure_deactivates(self, mock_db, mock_notify):
+        """First failure warns, final failure deactivates."""
+        from payment_server import handle_invoice_payment_failed
+
+        mock_db.execute_query.return_value = {'telegram_id': 12345}
+
+        # First failure — has next_attempt
+        invoice_retry = {
+            'customer': 'cus_fail',
+            'subscription': 'sub_fail',
+            'attempt_count': 1,
+            'next_payment_attempt': 1735689600,
+        }
+        handle_invoice_payment_failed(invoice_retry)
+
+        self.assertEqual(mock_notify.call_count, 1)
+        warn_text = mock_notify.call_args[0][1]
+        self.assertIn("Payment Failed", warn_text)
+        self.assertIn("retry", warn_text.lower())
+        mock_db.deactivate_subscription.assert_not_called()
+
+        mock_notify.reset_mock()
+        mock_db.reset_mock()
+        mock_db.execute_query.return_value = {'telegram_id': 12345}
+
+        # Final failure — no next_attempt
+        invoice_final = {
+            'customer': 'cus_fail',
+            'subscription': 'sub_fail',
+            'attempt_count': 4,
+            'next_payment_attempt': None,
+        }
+        handle_invoice_payment_failed(invoice_final)
+
+        mock_db.deactivate_subscription.assert_called_once_with(12345)
+        final_text = mock_notify.call_args[0][1]
+        self.assertIn("Cancelled", final_text)
+
+
+@unittest.skipUnless(FLASK_AVAILABLE, "Flask not installed")
+class TestE2EWebhookRouting(unittest.TestCase):
+    """End-to-end: verify all webhook event types route correctly through Flask."""
+
+    def setUp(self):
+        from payment_server import app
+        self.app = app.test_client()
+
+    @patch('payment_server.handle_checkout_session_completed')
+    @patch('payment_server.stripe.Webhook.construct_event')
+    def test_checkout_completed_routes_correctly(self, mock_construct, mock_handler):
+        """checkout.session.completed event should route to handler."""
+        mock_event = {
+            'type': 'checkout.session.completed',
+            'data': {'object': {'id': 'cs_route_test'}},
+        }
+        mock_construct.return_value = mock_event
+
+        resp = self.app.post('/webhook/stripe',
+                             data=b'payload',
+                             headers={'Stripe-Signature': 'sig_test'})
+        self.assertEqual(resp.status_code, 200)
+        mock_handler.assert_called_once_with({'id': 'cs_route_test'})
+
+    @patch('payment_server.handle_subscription_updated')
+    @patch('payment_server.stripe.Webhook.construct_event')
+    def test_subscription_updated_routes_correctly(self, mock_construct, mock_handler):
+        """customer.subscription.updated event should route to handler."""
+        mock_event = {
+            'type': 'customer.subscription.updated',
+            'data': {'object': {'id': 'sub_route_test'}},
+        }
+        mock_construct.return_value = mock_event
+
+        resp = self.app.post('/webhook/stripe',
+                             data=b'payload',
+                             headers={'Stripe-Signature': 'sig_test'})
+        self.assertEqual(resp.status_code, 200)
+        mock_handler.assert_called_once_with({'id': 'sub_route_test'})
+
+    @patch('payment_server.handle_subscription_deleted')
+    @patch('payment_server.stripe.Webhook.construct_event')
+    def test_subscription_deleted_routes_correctly(self, mock_construct, mock_handler):
+        """customer.subscription.deleted event should route to handler."""
+        mock_event = {
+            'type': 'customer.subscription.deleted',
+            'data': {'object': {'id': 'sub_del_test'}},
+        }
+        mock_construct.return_value = mock_event
+
+        resp = self.app.post('/webhook/stripe',
+                             data=b'payload',
+                             headers={'Stripe-Signature': 'sig_test'})
+        self.assertEqual(resp.status_code, 200)
+        mock_handler.assert_called_once_with({'id': 'sub_del_test'})
+
+    @patch('payment_server.handle_invoice_payment_failed')
+    @patch('payment_server.stripe.Webhook.construct_event')
+    def test_invoice_failed_routes_correctly(self, mock_construct, mock_handler):
+        """invoice.payment_failed event should route to handler."""
+        mock_event = {
+            'type': 'invoice.payment_failed',
+            'data': {'object': {'id': 'inv_route_test'}},
+        }
+        mock_construct.return_value = mock_event
+
+        resp = self.app.post('/webhook/stripe',
+                             data=b'payload',
+                             headers={'Stripe-Signature': 'sig_test'})
+        self.assertEqual(resp.status_code, 200)
+        mock_handler.assert_called_once_with({'id': 'inv_route_test'})
+
+    @patch('payment_server.stripe.Webhook.construct_event')
+    def test_unknown_event_returns_200(self, mock_construct):
+        """Unknown event types should return 200 without error."""
+        mock_construct.return_value = {
+            'type': 'some.unknown.event',
+            'data': {'object': {}},
+        }
+
+        resp = self.app.post('/webhook/stripe',
+                             data=b'payload',
+                             headers={'Stripe-Signature': 'sig_test'})
+        self.assertEqual(resp.status_code, 200)
+
+
+@unittest.skipUnless(FLASK_AVAILABLE, "Flask not installed")
+class TestE2ESuccessPageSavesStripeIds(unittest.TestCase):
+    """End-to-end: payment success page retrieves session and saves Stripe IDs."""
+
+    def setUp(self):
+        from payment_server import app
+        self.app = app.test_client()
+
+    @patch('payment_server.stripe.checkout.Session.retrieve')
+    @patch('payment_server.db')
+    def test_success_page_saves_ids_and_activates(self, mock_db, mock_retrieve):
+        """Success page with session_id should retrieve session and activate."""
+        mock_session = MagicMock()
+        mock_session.get = lambda key, default=None: {
+            'customer': 'cus_page',
+            'subscription': 'sub_page',
+            'client_reference_id': '54321',
+            'metadata': {'telegram_id': '54321'},
+        }.get(key, default)
+        mock_retrieve.return_value = mock_session
+
+        resp = self.app.get('/payment/success?bot=TestBot&session_id=cs_page_test')
+        self.assertEqual(resp.status_code, 200)
+
+        mock_retrieve.assert_called_once_with('cs_page_test')
+        mock_db.activate_subscription.assert_called_once_with(
+            54321,
+            stripe_customer_id='cus_page',
+            stripe_subscription_id='sub_page',
+            days=30
+        )
+
+
+class TestE2EPremiumGating(unittest.TestCase):
+    """End-to-end: verify premium commands check subscription status."""
+
+    @patch('multiuser.telegram_bot_multiuser.db')
+    def test_autopilot_blocked_when_inactive(self, mock_db):
+        """autopilot command should be blocked when subscription is inactive."""
+        from multiuser.telegram_bot_multiuser import autopilot_command
+        mock_db.is_subscription_active.return_value = False
+
+        update = make_update(user_id=12345)
+        context = make_context()
+
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(autopilot_command(update, context))
+        loop.close()
+
+        reply_text = update.message.reply_text.call_args[0][0]
+        self.assertTrue(
+            "active subscription" in reply_text.lower() or "subscribe" in reply_text.lower(),
+            f"Expected subscription-required message, got: {reply_text}"
+        )
+
+    @patch('multiuser.telegram_bot_multiuser.db')
+    def test_post_blocked_when_inactive(self, mock_db):
+        """post command should be blocked when subscription is inactive."""
+        from multiuser.telegram_bot_multiuser import post_command
+        mock_db.is_subscription_active.return_value = False
+
+        update = make_update(user_id=12345)
+        context = make_context()
+
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(post_command(update, context))
+        loop.close()
+
+        reply_text = update.message.reply_text.call_args[0][0]
+        self.assertTrue(
+            "active subscription" in reply_text.lower() or "subscribe" in reply_text.lower(),
+            f"Expected subscription-required message, got: {reply_text}"
+        )
+
+    @patch('multiuser.telegram_bot_multiuser.db')
+    def test_engage_blocked_when_inactive(self, mock_db):
+        """engage command should be blocked when subscription is inactive."""
+        from multiuser.telegram_bot_multiuser import engage_command
+        mock_db.is_subscription_active.return_value = False
+
+        update = make_update(user_id=12345)
+        context = make_context()
+
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(engage_command(update, context))
+        loop.close()
+
+        reply_text = update.message.reply_text.call_args[0][0]
+        self.assertTrue(
+            "active subscription" in reply_text.lower() or "subscribe" in reply_text.lower(),
+            f"Expected subscription-required message, got: {reply_text}"
+        )
+
+    @patch('multiuser.telegram_bot_multiuser.db')
+    def test_stats_blocked_when_inactive(self, mock_db):
+        """stats command should be blocked when subscription is inactive."""
+        from multiuser.telegram_bot_multiuser import stats_command
+        mock_db.is_subscription_active.return_value = False
+
+        update = make_update(user_id=12345)
+        context = make_context()
+
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(stats_command(update, context))
+        loop.close()
+
+        reply_text = update.message.reply_text.call_args[0][0]
+        self.assertTrue(
+            "active subscription" in reply_text.lower() or "subscribe" in reply_text.lower(),
+            f"Expected subscription-required message, got: {reply_text}"
+        )
+
+    @patch('multiuser.telegram_bot_multiuser.db')
+    def test_connect_blocked_when_inactive(self, mock_db):
+        """connect command should be blocked when subscription is inactive."""
+        from multiuser.telegram_bot_multiuser import connect_command
+        mock_db.is_subscription_active.return_value = False
+
+        update = make_update(user_id=12345)
+        context = make_context()
+
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(connect_command(update, context))
+        loop.close()
+
+        reply_text = update.message.reply_text.call_args[0][0]
+        self.assertTrue(
+            "active subscription" in reply_text.lower() or "subscribe" in reply_text.lower(),
+            f"Expected subscription-required message, got: {reply_text}"
+        )
+
+    @patch('multiuser.telegram_bot_multiuser.db')
+    def test_schedule_blocked_when_inactive(self, mock_db):
+        """schedule command should be blocked when subscription is inactive."""
+        from multiuser.telegram_bot_multiuser import schedule_command
+        mock_db.is_subscription_active.return_value = False
+
+        update = make_update(user_id=12345)
+        context = make_context()
+
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(schedule_command(update, context))
+        loop.close()
+
+        reply_text = update.message.reply_text.call_args[0][0]
+        self.assertTrue(
+            "active subscription" in reply_text.lower() or "subscribe" in reply_text.lower(),
+            f"Expected subscription-required message, got: {reply_text}"
+        )
+
+    @patch('multiuser.telegram_bot_multiuser.db')
+    def test_settings_blocked_when_inactive(self, mock_db):
+        """settings command should be blocked when subscription is inactive."""
+        from multiuser.telegram_bot_multiuser import settings_command
+        mock_db.is_subscription_active.return_value = False
+
+        update = make_update(user_id=12345)
+        context = make_context()
+
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(settings_command(update, context))
+        loop.close()
+
+        reply_text = update.message.reply_text.call_args[0][0]
+        self.assertTrue(
+            "active subscription" in reply_text.lower() or "subscribe" in reply_text.lower(),
+            f"Expected subscription-required message, got: {reply_text}"
+        )
+
+
+@unittest.skipUnless(FLASK_AVAILABLE, "Flask not installed")
+class TestE2EFullSubscriptionLifecycle(unittest.TestCase):
+    """End-to-end: complete lifecycle from payment → active → cancel → deactivated → re-subscribe."""
+
+    @patch('payment_server.send_telegram_notification')
+    @patch('payment_server.db')
+    def test_full_lifecycle_checkout_cancel_delete(self, mock_db, mock_notify):
+        """Complete flow: checkout → active → portal cancel → period end → deactivated."""
+        from payment_server import (
+            handle_checkout_session_completed,
+            handle_subscription_updated,
+            handle_subscription_deleted,
+        )
+
+        # Phase 1: Checkout completed
+        session = {
+            'id': 'cs_lifecycle',
+            'customer': 'cus_lifecycle',
+            'subscription': 'sub_lifecycle',
+            'client_reference_id': '77777',
+            'metadata': {},
+        }
+        handle_checkout_session_completed(session)
+
+        mock_db.activate_subscription.assert_called_once_with(
+            77777,
+            stripe_customer_id='cus_lifecycle',
+            stripe_subscription_id='sub_lifecycle',
+            days=30
+        )
+        self.assertIn("Payment Successful", mock_notify.call_args[0][1])
+
+        mock_notify.reset_mock()
+        mock_db.reset_mock()
+
+        # Phase 2: User cancels via Stripe portal
+        mock_db.execute_query.return_value = {
+            'telegram_id': 77777,
+            'username': 'lifecycle_user',
+            'first_name': 'Lifecycle',
+        }
+
+        sub_updated = {
+            'id': 'sub_lifecycle',
+            'customer': 'cus_lifecycle',
+            'cancel_at_period_end': True,
+            'status': 'active',
+            'current_period_end': 1735689600,
+        }
+        handle_subscription_updated(sub_updated)
+
+        notify_text = mock_notify.call_args[0][1]
+        self.assertIn("Cancelled Successfully", notify_text)
+        self.assertIn("January", notify_text)
+
+        mock_notify.reset_mock()
+        mock_db.reset_mock()
+
+        # Phase 3: Billing period ends
+        mock_db.execute_query.return_value = {'telegram_id': 77777}
+        sub_deleted = {
+            'id': 'sub_lifecycle',
+            'customer': 'cus_lifecycle',
+        }
+        handle_subscription_deleted(sub_deleted)
+
+        mock_db.deactivate_subscription.assert_called_once_with(77777)
+        self.assertIn("Subscription Ended", mock_notify.call_args[0][1])
+
+    @patch('payment_server.send_telegram_notification')
+    @patch('payment_server.db')
+    def test_lifecycle_with_stripe_v14_objects(self, mock_db, mock_notify):
+        """Same lifecycle but with Stripe v14 object format (attribute access)."""
+        from payment_server import (
+            handle_checkout_session_completed,
+            handle_subscription_updated,
+            handle_subscription_deleted,
+        )
+
+        # Phase 1: Checkout (uses .get() — works with both dict and object)
+        session = MagicMock()
+        session.get = lambda key, default=None: {
+            'id': 'cs_v14_lifecycle',
+            'customer': 'cus_v14_lifecycle',
+            'subscription': 'sub_v14_lifecycle',
+            'client_reference_id': '88888',
+            'metadata': {'telegram_id': '88888'},
+        }.get(key, default)
+
+        handle_checkout_session_completed(session)
+        mock_db.activate_subscription.assert_called_once()
+
+        mock_notify.reset_mock()
+        mock_db.reset_mock()
+
+        # Phase 2: Cancel with v14 object (period_end on items)
+        mock_db.execute_query.return_value = {
+            'telegram_id': 88888,
+            'username': 'v14user',
+            'first_name': 'V14',
+        }
+
+        sub_updated = MagicMock()
+        sub_updated.customer = 'cus_v14_lifecycle'
+        sub_updated.id = 'sub_v14_lifecycle'
+        sub_updated.cancel_at_period_end = True
+        sub_updated.status = 'active'
+        sub_updated.current_period_end = None
+        sub_updated.cancel_at = None
+        sub_updated.get = MagicMock(side_effect=KeyError)
+
+        item = MagicMock()
+        item.current_period_end = 1735689600
+        sub_updated.items.data = [item]
+
+        handle_subscription_updated(sub_updated)
+
+        notify_text = mock_notify.call_args[0][1]
+        self.assertIn("Cancelled Successfully", notify_text)
+
+        mock_notify.reset_mock()
+        mock_db.reset_mock()
+
+        # Phase 3: Deletion with v14 object
+        mock_db.execute_query.return_value = {'telegram_id': 88888}
+
+        sub_deleted = MagicMock()
+        sub_deleted.customer = 'cus_v14_lifecycle'
+        sub_deleted.id = 'sub_v14_lifecycle'
+        sub_deleted.get = MagicMock(side_effect=KeyError)
+
+        handle_subscription_deleted(sub_deleted)
+        mock_db.deactivate_subscription.assert_called_once_with(88888)
+
+
+@unittest.skipUnless(FLASK_AVAILABLE, "Flask not installed")
+class TestNotificationDelivery(unittest.TestCase):
+    """Test that Telegram notifications are actually sent correctly."""
+
+    @patch('payment_server.requests.post')
+    def test_notification_sends_correctly(self, mock_post):
+        """send_telegram_notification should POST to Telegram API."""
+        from payment_server import send_telegram_notification
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_post.return_value = mock_response
+
+        send_telegram_notification(12345, "Test message")
+
+        mock_post.assert_called_once()
+        call_kwargs = mock_post.call_args
+        self.assertIn('chat_id', call_kwargs[1].get('json', call_kwargs[0][0] if call_kwargs[0] else {}))
+
+    @patch('payment_server.requests.post')
+    def test_notification_handles_api_failure(self, mock_post):
+        """Should handle Telegram API failure without crashing."""
+        from payment_server import send_telegram_notification
+
+        mock_response = MagicMock()
+        mock_response.status_code = 403
+        mock_response.text = "Forbidden: bot was blocked by user"
+        mock_post.return_value = mock_response
+
+        # Should not raise
+        send_telegram_notification(12345, "Test message")
+
+    @patch('payment_server.requests.post')
+    def test_notification_handles_network_error(self, mock_post):
+        """Should handle network errors without crashing."""
+        from payment_server import send_telegram_notification
+
+        mock_post.side_effect = Exception("Connection timeout")
+
+        # Should not raise
+        send_telegram_notification(12345, "Test message")
+
+
+@unittest.skipUnless(FLASK_AVAILABLE, "Flask not installed")
+class TestWebhookSignatureVerification(unittest.TestCase):
+    """Test webhook signature validation."""
+
+    def setUp(self):
+        from payment_server import app
+        self.app = app.test_client()
+
+    def test_missing_signature_returns_400(self):
+        """Request without Stripe-Signature header should return 400."""
+        resp = self.app.post('/webhook/stripe', data=b'{}')
+        self.assertIn(resp.status_code, [400, 500])
+
+    def test_invalid_signature_returns_400(self):
+        """Request with invalid signature should return 400."""
+        resp = self.app.post('/webhook/stripe',
+                             data=b'{"type": "test"}',
+                             headers={'Stripe-Signature': 'invalid_sig'})
+        self.assertEqual(resp.status_code, 400)
+
+    @patch('payment_server.stripe.Webhook.construct_event')
+    def test_valid_signature_returns_200(self, mock_construct):
+        """Request with valid signature should return 200."""
+        mock_construct.return_value = {
+            'type': 'ping',
+            'data': {'object': {}},
+        }
+        resp = self.app.post('/webhook/stripe',
+                             data=b'payload',
+                             headers={'Stripe-Signature': 'valid_sig'})
+        self.assertEqual(resp.status_code, 200)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -248,16 +248,54 @@ def handle_checkout_session_completed(session):
     except Exception as e:
         logger.error(f"Error handling checkout.session.completed: {e}")
 
+def _get_subscription_period_end(subscription):
+    """Get current_period_end from a Stripe subscription object.
+    Handles both old API (subscription.current_period_end) and
+    new API 2025-03-31+ (subscription.items.data[0].current_period_end)."""
+    # Try subscription-level first (old API)
+    period_end = getattr(subscription, 'current_period_end', None)
+    if period_end is None:
+        try:
+            period_end = subscription['current_period_end']
+        except (KeyError, TypeError):
+            pass
+
+    # Try item-level (new API 2025-03-31+)
+    if period_end is None:
+        try:
+            items = getattr(subscription, 'items', None)
+            if items and hasattr(items, 'data') and items.data:
+                period_end = getattr(items.data[0], 'current_period_end', None)
+                if period_end is None:
+                    period_end = items.data[0].get('current_period_end')
+        except (AttributeError, IndexError, KeyError, TypeError):
+            pass
+
+    # Fallback: try cancel_at field if cancelling
+    if period_end is None:
+        period_end = getattr(subscription, 'cancel_at', None)
+        if period_end is None:
+            try:
+                period_end = subscription.get('cancel_at')
+            except (AttributeError, TypeError):
+                pass
+
+    return period_end
+
+
 def handle_subscription_updated(subscription):
     """Handle subscription update events (including cancellations)"""
     try:
-        customer_id = subscription['customer']
-        subscription_id = subscription['id']
-        cancel_at_period_end = subscription['cancel_at_period_end']
-        status = subscription['status']
-        current_period_end = subscription['current_period_end']
+        customer_id = getattr(subscription, 'customer', None) or subscription.get('customer')
+        subscription_id = getattr(subscription, 'id', None) or subscription.get('id')
+        cancel_at_period_end = getattr(subscription, 'cancel_at_period_end', None)
+        if cancel_at_period_end is None:
+            cancel_at_period_end = subscription.get('cancel_at_period_end', False)
+        status = getattr(subscription, 'status', None) or subscription.get('status')
+        current_period_end = _get_subscription_period_end(subscription)
 
-        logger.info(f"Subscription updated: {subscription_id}, cancel_at_period_end={cancel_at_period_end}")
+        logger.info(f"Subscription updated: {subscription_id}, status={status}, "
+                     f"cancel_at_period_end={cancel_at_period_end}, period_end={current_period_end}")
 
         # Find user by Stripe customer ID
         user = db.execute_query("""
@@ -276,22 +314,38 @@ def handle_subscription_updated(subscription):
         if cancel_at_period_end:
             # Subscription is marked for cancellation — keep active until period end
             logger.info(f"Subscription {subscription_id} marked for cancellation for user {telegram_id}")
-            cancel_date_ts = datetime.fromtimestamp(current_period_end)
+
+            if current_period_end:
+                cancel_date_ts = datetime.fromtimestamp(current_period_end)
+                cancel_date = cancel_date_ts.strftime('%B %d, %Y')
+            else:
+                cancel_date_ts = None
+                cancel_date = "your billing period end"
 
             # Keep subscription_active=true, set expiry to period end
             # Stripe will fire customer.subscription.deleted when period actually ends
-            db.execute_query("""
-                UPDATE users
-                SET subscription_expires = %s,
-                    metadata = jsonb_set(
-                        COALESCE(metadata, '{}'::jsonb),
-                        '{cancellation_pending}',
-                        'true'::jsonb
-                    )
-                WHERE telegram_id = %s
-            """, (cancel_date_ts, telegram_id,))
+            if cancel_date_ts:
+                db.execute_query("""
+                    UPDATE users
+                    SET subscription_expires = %s,
+                        metadata = jsonb_set(
+                            COALESCE(metadata, '{}'::jsonb),
+                            '{cancellation_pending}',
+                            'true'::jsonb
+                        )
+                    WHERE telegram_id = %s
+                """, (cancel_date_ts, telegram_id,))
+            else:
+                db.execute_query("""
+                    UPDATE users
+                    SET metadata = jsonb_set(
+                            COALESCE(metadata, '{}'::jsonb),
+                            '{cancellation_pending}',
+                            'true'::jsonb
+                        )
+                    WHERE telegram_id = %s
+                """, (telegram_id,))
 
-            cancel_date = cancel_date_ts.strftime('%B %d, %Y')
             send_telegram_notification(
                 telegram_id,
                 f"✅ Subscription Cancelled Successfully\n\n"
@@ -320,13 +374,13 @@ def handle_subscription_updated(subscription):
             )
 
     except Exception as e:
-        logger.error(f"Error handling subscription update: {e}")
+        logger.error(f"Error handling subscription update: {e}", exc_info=True)
 
 def handle_subscription_deleted(subscription):
     """Handle subscription deletion (immediate cancellation)"""
     try:
-        customer_id = subscription['customer']
-        subscription_id = subscription['id']
+        customer_id = getattr(subscription, 'customer', None) or subscription.get('customer')
+        subscription_id = getattr(subscription, 'id', None) or subscription.get('id')
 
         logger.info(f"Subscription deleted: {subscription_id}")
 

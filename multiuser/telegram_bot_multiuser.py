@@ -2881,19 +2881,47 @@ async def handle_cancel_subscription_callback(update: Update, context: ContextTy
                 cancel_at_period_end=True
             )
 
-            cancel_date = datetime.fromtimestamp(subscription.current_period_end)
-            cancel_date_str = cancel_date.strftime('%B %d, %Y')
+            # Get period end — handle both old API (subscription.current_period_end)
+            # and new API 2025-03-31+ (subscription.items.data[0].current_period_end)
+            period_end = getattr(subscription, 'current_period_end', None)
+            if period_end is None:
+                try:
+                    items = getattr(subscription, 'items', None)
+                    if items and hasattr(items, 'data') and items.data:
+                        period_end = getattr(items.data[0], 'current_period_end', None)
+                except (AttributeError, IndexError):
+                    pass
+            if period_end is None:
+                period_end = getattr(subscription, 'cancel_at', None)
 
-            db.execute_query("""
-                UPDATE users
-                SET subscription_expires = %s,
-                    metadata = jsonb_set(
-                        COALESCE(metadata, '{}'::jsonb),
-                        '{cancellation_pending}',
-                        'true'::jsonb
-                    )
-                WHERE telegram_id = %s
-            """, (cancel_date, telegram_id,))
+            if period_end:
+                cancel_date = datetime.fromtimestamp(period_end)
+                cancel_date_str = cancel_date.strftime('%B %d, %Y')
+            else:
+                cancel_date = None
+                cancel_date_str = "your billing period end"
+
+            if cancel_date:
+                db.execute_query("""
+                    UPDATE users
+                    SET subscription_expires = %s,
+                        metadata = jsonb_set(
+                            COALESCE(metadata, '{}'::jsonb),
+                            '{cancellation_pending}',
+                            'true'::jsonb
+                        )
+                    WHERE telegram_id = %s
+                """, (cancel_date, telegram_id,))
+            else:
+                db.execute_query("""
+                    UPDATE users
+                    SET metadata = jsonb_set(
+                            COALESCE(metadata, '{}'::jsonb),
+                            '{cancellation_pending}',
+                            'true'::jsonb
+                        )
+                    WHERE telegram_id = %s
+                """, (telegram_id,))
 
             await query.edit_message_text(
                 f"✅ Subscription Cancelled\n\n"
