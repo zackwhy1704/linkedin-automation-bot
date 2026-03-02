@@ -2617,6 +2617,54 @@ async def handle_web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
 
 
+async def _try_find_stripe_subscription(telegram_id: int) -> str:
+    """Search Stripe for an active subscription belonging to this telegram user.
+    Returns subscription_id if found (and saves it to DB), else None."""
+    try:
+        # Search Stripe subscriptions by metadata
+        subscriptions = stripe.Subscription.search(
+            query=f'metadata["telegram_id"]:"{telegram_id}"',
+            limit=5
+        )
+
+        for sub in subscriptions.auto_paging_iter():
+            if sub.status in ('active', 'trialing', 'past_due'):
+                # Found it — save to DB for future use
+                db.execute_query("""
+                    UPDATE users SET
+                        stripe_customer_id = COALESCE(stripe_customer_id, %s),
+                        stripe_subscription_id = COALESCE(stripe_subscription_id, %s)
+                    WHERE telegram_id = %s
+                """, (sub.customer, sub.id, telegram_id))
+                logger.info(f"Found Stripe subscription {sub.id} for user {telegram_id} via search")
+                return sub.id
+
+        # Also try searching by customer metadata
+        customers = stripe.Customer.search(
+            query=f'metadata["telegram_id"]:"{telegram_id}"',
+            limit=5
+        )
+
+        for customer in customers.auto_paging_iter():
+            # List their subscriptions
+            subs = stripe.Subscription.list(customer=customer.id, status='all', limit=10)
+            for sub in subs.auto_paging_iter():
+                if sub.status in ('active', 'trialing', 'past_due'):
+                    db.execute_query("""
+                        UPDATE users SET
+                            stripe_customer_id = COALESCE(stripe_customer_id, %s),
+                            stripe_subscription_id = COALESCE(stripe_subscription_id, %s)
+                        WHERE telegram_id = %s
+                    """, (customer.id, sub.id, telegram_id))
+                    logger.info(f"Found Stripe subscription {sub.id} for user {telegram_id} via customer search")
+                    return sub.id
+
+    except Exception as e:
+        logger.warning(f"Stripe search failed for user {telegram_id}: {e}")
+
+    return None
+
+
 async def cancel_subscription_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Cancel user's Stripe subscription - ALWAYS provides cancellation option"""
     telegram_id = update.effective_user.id
@@ -2628,32 +2676,33 @@ async def cancel_subscription_command(update: Update, context: ContextTypes.DEFA
     except Exception as e:
         logger.error(f"Error getting user data: {e}")
 
-    stripe_subscription_id = user_data.get('stripe_subscription_id') if user_data else None
+    is_active = False
+    try:
+        is_active = db.is_subscription_active(telegram_id)
+    except Exception:
+        pass
 
-    # Build warning message based on available data
-    warning_msg = ""
-    if not user_data:
-        warning_msg = "\n\n⚠️ Note: User not found in database. You can still attempt cancellation if you have a Stripe subscription."
-    elif not stripe_subscription_id:
-        warning_msg = "\n\n⚠️ Note: No subscription ID found in database. You can still attempt cancellation if you have an active Stripe subscription."
+    if not user_data and not is_active:
+        await update.message.reply_text(
+            "You don't have an active subscription.\n\n"
+            "Use /start to subscribe."
+        )
+        return
 
-    # ALWAYS show confirmation dialog - never block user from attempting cancellation
     keyboard = [
-        [InlineKeyboardButton("❌ Yes, cancel my subscription", callback_data='confirm_cancel_sub')],
-        [InlineKeyboardButton("✅ Keep my subscription", callback_data='keep_sub')],
+        [InlineKeyboardButton("Yes, cancel my subscription", callback_data='confirm_cancel_sub')],
+        [InlineKeyboardButton("Keep my subscription", callback_data='keep_sub')],
     ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
 
     await update.message.reply_text(
-        f"😢 We're sorry to see you go!\n\n"
-        f"Are you sure you want to cancel your subscription?\n\n"
-        f"⚠️ This will attempt to cancel your Stripe subscription. You will lose access to:\n"
-        f"• AI-generated posts\n"
-        f"• Smart feed engagement\n"
-        f"• Automated networking\n"
-        f"• Analytics dashboard{warning_msg}\n\n"
-        f"Your subscription will remain active until the end of your current billing period.",
-        reply_markup=reply_markup
+        "Are you sure you want to cancel your subscription?\n\n"
+        "You will lose access to:\n"
+        "- AI-generated posts\n"
+        "- Smart feed engagement\n"
+        "- Automated networking\n"
+        "- Analytics dashboard\n\n"
+        "Your subscription will remain active until the end of your current billing period.",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 
@@ -2685,39 +2734,50 @@ async def handle_cancel_subscription_callback(update: Update, context: ContextTy
         except Exception as e:
             logger.error(f"Error getting user data for cancellation: {e}")
 
-        # Try to create portal session (preferred method)
+        # ── Case 1: FREE/promo user — no Stripe subscription exists ──
+        if user_data and not stripe_customer_id and not stripe_subscription_id:
+            is_active = user_data.get('subscription_active', False)
+            if is_active:
+                db.deactivate_subscription(telegram_id)
+                await query.edit_message_text(
+                    "✅ Subscription Cancelled\n\n"
+                    "Your free/promo subscription has been deactivated.\n\n"
+                    "You can resubscribe anytime with /start\n\n"
+                    "Thank you for using LinkedInGrowthBot!"
+                )
+            else:
+                await query.edit_message_text(
+                    "You don't have an active subscription.\n\n"
+                    "Use /start to subscribe."
+                )
+            return
+
+        # ── Case 2: Stripe customer — try portal + fallback ──
         if stripe_customer_id:
             try:
-                # Create Stripe Customer Portal session
                 portal_session = stripe.billing_portal.Session.create(
                     customer=stripe_customer_id,
                     return_url=f'{PAYMENT_SERVER_URL}/payment/cancel-complete?telegram_id={telegram_id}'
                 )
 
-                # Show portal option + fallback API option
                 keyboard = [
-                    [InlineKeyboardButton("🔗 Open Stripe Portal (Recommended)", url=portal_session.url)],
-                    [InlineKeyboardButton("⚡ Direct API Cancel (Fallback)", callback_data='force_cancel_sub')]
+                    [InlineKeyboardButton("Open Stripe Portal (Recommended)", url=portal_session.url)],
+                    [InlineKeyboardButton("Direct API Cancel (Fallback)", callback_data='force_cancel_sub')]
                 ]
-                reply_markup = InlineKeyboardMarkup(keyboard)
 
                 await query.edit_message_text(
-                    "🔐 Choose cancellation method:\n\n"
-                    "✅ **Recommended: Stripe Portal**\n"
-                    "• Official Stripe interface\n"
-                    "• Webhook confirmation\n"
-                    "• Update payment method\n"
-                    "• View billing history\n\n"
-                    "⚡ **Fallback: Direct API**\n"
-                    "• Immediate cancellation\n"
-                    "• No webhook needed\n"
-                    "• Use if portal fails\n\n"
-                    "⚠️ After canceling in portal, you'll receive webhook confirmation.",
-                    reply_markup=reply_markup,
+                    "Choose cancellation method:\n\n"
+                    "Recommended: *Stripe Portal*\n"
+                    "- Official Stripe interface\n"
+                    "- Update payment method\n"
+                    "- View billing history\n\n"
+                    "Fallback: *Direct API*\n"
+                    "- Immediate cancellation\n"
+                    "- Use if portal fails",
+                    reply_markup=InlineKeyboardMarkup(keyboard),
                     parse_mode='Markdown'
                 )
 
-                # Store that user initiated cancellation
                 db.execute_query("""
                     UPDATE users
                     SET metadata = jsonb_set(
@@ -2730,46 +2790,52 @@ async def handle_cancel_subscription_callback(update: Update, context: ContextTy
 
             except stripe.error.StripeError as e:
                 logger.error(f"Stripe portal error: {e}")
-                # Portal failed, show only direct API option
-                keyboard = [[InlineKeyboardButton("⚡ Cancel via Direct API", callback_data='force_cancel_sub')]]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-
+                keyboard = [[InlineKeyboardButton("Cancel via Direct API", callback_data='force_cancel_sub')]]
                 await query.edit_message_text(
-                    f"⚠️ Stripe Portal unavailable:\n\n{str(e)}\n\n"
-                    "Using direct API cancellation instead:\n\n"
-                    "👇 Click below to cancel your subscription immediately.",
-                    reply_markup=reply_markup
+                    f"Stripe Portal unavailable: {str(e)}\n\n"
+                    "Click below to cancel directly.",
+                    reply_markup=InlineKeyboardMarkup(keyboard)
                 )
 
-        else:
-            # No customer ID, must use direct API
-            # ALWAYS show Direct API button - never block user from attempting
-            keyboard = [[InlineKeyboardButton("⚡ Cancel via Direct API", callback_data='force_cancel_sub')]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
+        # ── Case 3: Have subscription ID but no customer ID ──
+        elif stripe_subscription_id:
+            keyboard = [[InlineKeyboardButton("Cancel via Direct API", callback_data='force_cancel_sub')]]
+            await query.edit_message_text(
+                "Using direct API cancellation.\n\n"
+                "Click below to cancel your subscription.",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
 
-            # Build message based on available data
-            if not stripe_subscription_id:
-                # No subscription ID, but still show button - let Stripe API respond
+        # ── Case 4: No Stripe data at all — try to find via Stripe search ──
+        else:
+            # Attempt Stripe lookup by metadata before giving up
+            found_sub = await _try_find_stripe_subscription(telegram_id)
+            if found_sub:
+                keyboard = [[InlineKeyboardButton("Cancel Subscription", callback_data='force_cancel_sub')]]
                 await query.edit_message_text(
-                    "⚠️ Warning: No subscription ID found in database.\n\n"
-                    "You can still attempt to cancel via Stripe API below.\n\n"
-                    "If this fails, please contact support with your Telegram ID.\n\n"
-                    "👇 Click below to attempt cancellation:",
-                    reply_markup=reply_markup
+                    "Found your Stripe subscription.\n\n"
+                    "Click below to cancel.",
+                    reply_markup=InlineKeyboardMarkup(keyboard)
                 )
             else:
-                # Have subscription ID, no customer ID
-                await query.edit_message_text(
-                    "ℹ️ No customer portal available.\n\n"
-                    "Using direct API cancellation:\n\n"
-                    "⚡ This will immediately cancel your subscription via Stripe API.\n\n"
-                    "👇 Click below to proceed:",
-                    reply_markup=reply_markup
-                )
+                # Truly no subscription found anywhere
+                if user_data and user_data.get('subscription_active'):
+                    # Active but no Stripe — deactivate locally
+                    db.deactivate_subscription(telegram_id)
+                    await query.edit_message_text(
+                        "✅ Subscription Cancelled\n\n"
+                        "Your subscription has been deactivated locally.\n\n"
+                        "No active Stripe billing was found — you will not be charged.\n\n"
+                        "You can resubscribe anytime with /start"
+                    )
+                else:
+                    await query.edit_message_text(
+                        "No active subscription found.\n\n"
+                        "Use /start to subscribe."
+                    )
 
     elif query.data == 'force_cancel_sub':
-        # Direct API cancellation (fallback method)
-        # Try to get user data, but don't block if missing
+        # Direct API cancellation
         user_data = None
         stripe_subscription_id = None
 
@@ -2779,30 +2845,35 @@ async def handle_cancel_subscription_callback(update: Update, context: ContextTy
         except Exception as e:
             logger.error(f"Error getting user data for cancellation: {e}")
 
-        # If no subscription ID, show helpful error but acknowledge the attempt
+        # If no subscription ID in DB, try Stripe search
         if not stripe_subscription_id:
-            await query.edit_message_text(
-                "❌ Unable to cancel: No Stripe subscription ID found\n\n"
-                "This means either:\n"
-                "• You haven't subscribed yet\n"
-                "• Your subscription data is missing from our database\n"
-                "• Your subscription was already cancelled\n\n"
-                "📧 Please contact support with your Telegram ID and we'll help resolve this.\n\n"
-                f"Your Telegram ID: `{telegram_id}`",
-                parse_mode='Markdown'
-            )
+            found_sub = await _try_find_stripe_subscription(telegram_id)
+            if found_sub:
+                stripe_subscription_id = found_sub
+
+        if not stripe_subscription_id:
+            # No Stripe subscription exists — deactivate locally if active
+            if user_data and user_data.get('subscription_active'):
+                db.deactivate_subscription(telegram_id)
+                await query.edit_message_text(
+                    "✅ Subscription Cancelled\n\n"
+                    "Your subscription has been deactivated.\n\n"
+                    "No active Stripe billing was found — you will not be charged.\n\n"
+                    "You can resubscribe anytime with /start"
+                )
+            else:
+                await query.edit_message_text(
+                    "No active subscription found.\n\n"
+                    "Use /start to subscribe."
+                )
             return
 
         try:
-            # Cancel subscription directly via Stripe API
             subscription = stripe.Subscription.modify(
                 stripe_subscription_id,
                 cancel_at_period_end=True
             )
 
-            # Update local database — keep subscription_active=true until period end
-            # Stripe will fire customer.subscription.deleted when period actually ends
-            from datetime import datetime
             cancel_date = datetime.fromtimestamp(subscription.current_period_end)
             cancel_date_str = cancel_date.strftime('%B %d, %Y')
 
@@ -2818,33 +2889,43 @@ async def handle_cancel_subscription_callback(update: Update, context: ContextTy
             """, (cancel_date, telegram_id,))
 
             await query.edit_message_text(
-                f"✅ Subscription Cancelled via Direct API\n\n"
-                f"Your subscription has been successfully cancelled in Stripe.\n\n"
-                f"📅 Access continues until: {cancel_date_str}\n\n"
+                f"✅ Subscription Cancelled\n\n"
+                f"Your Stripe subscription has been cancelled.\n\n"
+                f"Access continues until: {cancel_date_str}\n\n"
                 f"You won't be charged again.\n\n"
-                f"Changed your mind? You can resubscribe anytime with /start\n\n"
-                f"Thank you for using LinkedInGrowthBot! 💙"
+                f"Changed your mind? Resubscribe anytime with /start\n\n"
+                f"Thank you for using LinkedInGrowthBot!"
             )
 
         except stripe.error.InvalidRequestError as e:
-            logger.error(f"Stripe API error: {e}")
-            await query.edit_message_text(
-                f"❌ Stripe API Error:\n\n"
-                f"{str(e)}\n\n"
-                f"The subscription may not exist or is already cancelled.\n\n"
-                f"Check your Stripe dashboard or contact support."
-            )
+            logger.error(f"Stripe API error during cancel: {e}")
+            error_str = str(e).lower()
+            # If subscription doesn't exist on Stripe, deactivate locally
+            if 'no such subscription' in error_str or 'does not exist' in error_str:
+                db.deactivate_subscription(telegram_id)
+                await query.edit_message_text(
+                    "✅ Subscription Cancelled\n\n"
+                    "The Stripe subscription was already cancelled or expired.\n\n"
+                    "Your local subscription has been deactivated. You will not be charged.\n\n"
+                    "You can resubscribe anytime with /start"
+                )
+            else:
+                await query.edit_message_text(
+                    f"Stripe API Error: {str(e)}\n\n"
+                    f"Please try again or contact support.\n\n"
+                    f"Your Telegram ID: `{telegram_id}`",
+                    parse_mode='Markdown'
+                )
         except stripe.error.StripeError as e:
-            logger.error(f"Stripe error: {e}")
+            logger.error(f"Stripe error during cancel: {e}")
             await query.edit_message_text(
-                f"❌ Error cancelling subscription:\n\n"
-                f"{str(e)}\n\n"
+                f"Error cancelling subscription: {str(e)}\n\n"
                 f"Please try again or contact support."
             )
         except Exception as e:
             logger.error(f"Error in direct cancellation: {e}")
             await query.edit_message_text(
-                "❌ An error occurred while cancelling your subscription.\n\n"
+                "An error occurred while cancelling your subscription.\n\n"
                 "Please try again or contact support."
             )
 

@@ -141,7 +141,11 @@ def stripe_webhook():
     event_type = event['type']
     logger.info(f"Received Stripe event: {event_type}")
 
-    if event_type == 'customer.subscription.updated':
+    if event_type == 'checkout.session.completed':
+        session = event['data']['object']
+        handle_checkout_session_completed(session)
+
+    elif event_type == 'customer.subscription.updated':
         subscription = event['data']['object']
         handle_subscription_updated(subscription)
 
@@ -154,6 +158,43 @@ def stripe_webhook():
         handle_invoice_payment_failed(invoice)
 
     return jsonify({'status': 'success'}), 200
+
+
+def handle_checkout_session_completed(session):
+    """Handle checkout.session.completed — save Stripe customer_id and subscription_id to user record.
+    This is the CRITICAL handler that links a Stripe subscription to a Telegram user."""
+    try:
+        customer_id = session.get('customer')
+        subscription_id = session.get('subscription')
+        telegram_id_str = session.get('client_reference_id') or session.get('metadata', {}).get('telegram_id')
+
+        if not telegram_id_str:
+            logger.warning(f"checkout.session.completed missing telegram_id: {session.get('id')}")
+            return
+
+        telegram_id = int(telegram_id_str)
+
+        logger.info(f"Checkout completed for user {telegram_id}: customer={customer_id}, subscription={subscription_id}")
+
+        # Activate subscription AND save Stripe IDs
+        db.activate_subscription(
+            telegram_id,
+            stripe_customer_id=customer_id,
+            stripe_subscription_id=subscription_id,
+            days=30
+        )
+
+        # Send confirmation
+        send_telegram_notification(
+            telegram_id,
+            "🎉 Payment Successful!\n\n"
+            "Your subscription is now ACTIVE!\n\n"
+            "You now have full access to all features.\n\n"
+            "🚀 Send /autopilot to start automating!"
+        )
+
+    except Exception as e:
+        logger.error(f"Error handling checkout.session.completed: {e}")
 
 def handle_subscription_updated(subscription):
     """Handle subscription update events (including cancellations)"""

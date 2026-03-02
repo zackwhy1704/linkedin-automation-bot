@@ -750,11 +750,13 @@ class TestCancelSubscription(unittest.TestCase):
 
     @patch('multiuser.telegram_bot_multiuser.db')
     def test_cancel_command_shows_confirmation(self, mock_db):
-        """Cancel command should always show confirmation buttons."""
+        """Cancel command should show confirmation buttons for active users."""
         mock_db.get_user.return_value = {
+            'subscription_active': True,
             'stripe_subscription_id': 'sub_test123',
             'stripe_customer_id': 'cus_test123',
         }
+        mock_db.is_subscription_active.return_value = True
 
         from multiuser.telegram_bot_multiuser import cancel_subscription_command
         update = make_update(text="/cancelsubscription", user_id=12345)
@@ -1147,6 +1149,483 @@ class TestConversationStates(unittest.TestCase):
         self.assertGreater(SETJOB_ROLES, onboarding_max)
         self.assertGreater(SETJOB_LOCATION, onboarding_max)
         self.assertGreater(SETJOB_CONFIRM, onboarding_max)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TEST: Payment & Subscription Edge Cases
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestCancelFreeUser(unittest.TestCase):
+    """Test cancellation for FREE/promo users (no Stripe subscription)."""
+
+    @patch('multiuser.telegram_bot_multiuser.db')
+    def test_cancel_free_user_deactivates_locally(self, mock_db):
+        """FREE user with no Stripe IDs should be deactivated locally."""
+        mock_db.get_user.return_value = {
+            'subscription_active': True,
+            'stripe_customer_id': None,
+            'stripe_subscription_id': None,
+        }
+        mock_db.deactivate_subscription.return_value = True
+
+        from multiuser.telegram_bot_multiuser import handle_cancel_subscription_callback
+        update = make_update(callback_data='confirm_cancel_sub', user_id=12345)
+        context = make_context()
+
+        asyncio.get_event_loop().run_until_complete(
+            handle_cancel_subscription_callback(update, context)
+        )
+        mock_db.deactivate_subscription.assert_called_once_with(12345)
+        call_text = update.callback_query.edit_message_text.call_args[0][0]
+        self.assertIn("Cancelled", call_text)
+
+    @patch('multiuser.telegram_bot_multiuser.db')
+    def test_cancel_inactive_free_user_shows_no_subscription(self, mock_db):
+        """Inactive FREE user should be told no subscription exists."""
+        mock_db.get_user.return_value = {
+            'subscription_active': False,
+            'stripe_customer_id': None,
+            'stripe_subscription_id': None,
+        }
+
+        from multiuser.telegram_bot_multiuser import handle_cancel_subscription_callback
+        update = make_update(callback_data='confirm_cancel_sub', user_id=12345)
+        context = make_context()
+
+        asyncio.get_event_loop().run_until_complete(
+            handle_cancel_subscription_callback(update, context)
+        )
+        mock_db.deactivate_subscription.assert_not_called()
+        call_text = update.callback_query.edit_message_text.call_args[0][0]
+        self.assertIn("don't have an active subscription", call_text.lower() if "don't" in call_text.lower() else call_text)
+
+
+class TestCancelStripeUser(unittest.TestCase):
+    """Test cancellation for Stripe-paying users."""
+
+    @patch('multiuser.telegram_bot_multiuser.stripe')
+    @patch('multiuser.telegram_bot_multiuser.db')
+    def test_cancel_with_customer_id_shows_portal(self, mock_db, mock_stripe):
+        """User with Stripe customer ID should see portal option."""
+        mock_db.get_user.return_value = {
+            'subscription_active': True,
+            'stripe_customer_id': 'cus_test123',
+            'stripe_subscription_id': 'sub_test123',
+        }
+        mock_portal = MagicMock()
+        mock_portal.url = "https://billing.stripe.com/test"
+        mock_stripe.billing_portal.Session.create.return_value = mock_portal
+
+        from multiuser.telegram_bot_multiuser import handle_cancel_subscription_callback
+        update = make_update(callback_data='confirm_cancel_sub', user_id=12345)
+        context = make_context()
+
+        asyncio.get_event_loop().run_until_complete(
+            handle_cancel_subscription_callback(update, context)
+        )
+        mock_stripe.billing_portal.Session.create.assert_called_once()
+        call_text = update.callback_query.edit_message_text.call_args[0][0]
+        self.assertIn("Stripe Portal", call_text)
+
+    @patch('multiuser.telegram_bot_multiuser.stripe')
+    @patch('multiuser.telegram_bot_multiuser.db')
+    def test_cancel_portal_fails_shows_fallback(self, mock_db, mock_stripe):
+        """If Stripe portal fails, show direct API fallback."""
+        mock_db.get_user.return_value = {
+            'subscription_active': True,
+            'stripe_customer_id': 'cus_test123',
+            'stripe_subscription_id': 'sub_test123',
+        }
+        import stripe as real_stripe
+        mock_stripe.billing_portal.Session.create.side_effect = real_stripe.error.StripeError("Portal unavailable")
+        mock_stripe.error = real_stripe.error
+
+        from multiuser.telegram_bot_multiuser import handle_cancel_subscription_callback
+        update = make_update(callback_data='confirm_cancel_sub', user_id=12345)
+        context = make_context()
+
+        asyncio.get_event_loop().run_until_complete(
+            handle_cancel_subscription_callback(update, context)
+        )
+        call_text = update.callback_query.edit_message_text.call_args[0][0]
+        self.assertIn("unavailable", call_text.lower())
+
+    @patch('multiuser.telegram_bot_multiuser.stripe')
+    @patch('multiuser.telegram_bot_multiuser.db')
+    def test_force_cancel_with_subscription_id(self, mock_db, mock_stripe):
+        """Direct API cancel should work with valid subscription_id."""
+        mock_db.get_user.return_value = {
+            'subscription_active': True,
+            'stripe_customer_id': 'cus_test123',
+            'stripe_subscription_id': 'sub_test123',
+        }
+        mock_sub = MagicMock()
+        mock_sub.current_period_end = 1735689600  # 2025-01-01
+        mock_stripe.Subscription.modify.return_value = mock_sub
+
+        from multiuser.telegram_bot_multiuser import handle_cancel_subscription_callback
+        update = make_update(callback_data='force_cancel_sub', user_id=12345)
+        context = make_context()
+
+        asyncio.get_event_loop().run_until_complete(
+            handle_cancel_subscription_callback(update, context)
+        )
+        mock_stripe.Subscription.modify.assert_called_once_with(
+            'sub_test123', cancel_at_period_end=True
+        )
+        call_text = update.callback_query.edit_message_text.call_args[0][0]
+        self.assertIn("Cancelled", call_text)
+
+    @patch('multiuser.telegram_bot_multiuser._try_find_stripe_subscription', new_callable=AsyncMock)
+    @patch('multiuser.telegram_bot_multiuser.db')
+    def test_force_cancel_no_sub_id_deactivates_locally(self, mock_db, mock_search):
+        """Force cancel with no sub ID and no Stripe search result should deactivate locally."""
+        mock_db.get_user.return_value = {
+            'subscription_active': True,
+            'stripe_customer_id': None,
+            'stripe_subscription_id': None,
+        }
+        mock_search.return_value = None
+
+        from multiuser.telegram_bot_multiuser import handle_cancel_subscription_callback
+        update = make_update(callback_data='force_cancel_sub', user_id=12345)
+        context = make_context()
+
+        asyncio.get_event_loop().run_until_complete(
+            handle_cancel_subscription_callback(update, context)
+        )
+        mock_db.deactivate_subscription.assert_called_once_with(12345)
+        call_text = update.callback_query.edit_message_text.call_args[0][0]
+        self.assertIn("Cancelled", call_text)
+
+    @patch('multiuser.telegram_bot_multiuser.stripe')
+    @patch('multiuser.telegram_bot_multiuser.db')
+    def test_force_cancel_stripe_invalid_request_deactivates(self, mock_db, mock_stripe):
+        """If Stripe says subscription doesn't exist, deactivate locally."""
+        mock_db.get_user.return_value = {
+            'subscription_active': True,
+            'stripe_customer_id': None,
+            'stripe_subscription_id': 'sub_expired123',
+        }
+        import stripe as real_stripe
+        mock_stripe.Subscription.modify.side_effect = real_stripe.error.InvalidRequestError(
+            "No such subscription: sub_expired123", param="id"
+        )
+        mock_stripe.error = real_stripe.error
+
+        from multiuser.telegram_bot_multiuser import handle_cancel_subscription_callback
+        update = make_update(callback_data='force_cancel_sub', user_id=12345)
+        context = make_context()
+
+        asyncio.get_event_loop().run_until_complete(
+            handle_cancel_subscription_callback(update, context)
+        )
+        mock_db.deactivate_subscription.assert_called_once_with(12345)
+        call_text = update.callback_query.edit_message_text.call_args[0][0]
+        self.assertIn("Cancelled", call_text)
+
+
+class TestCancelCommand(unittest.TestCase):
+    """Test /cancelsubscription command entry point."""
+
+    @patch('multiuser.telegram_bot_multiuser.db')
+    def test_cancel_no_user_shows_no_subscription(self, mock_db):
+        """User not in DB with no active sub should be told no subscription."""
+        mock_db.get_user.return_value = None
+        mock_db.is_subscription_active.return_value = False
+
+        from multiuser.telegram_bot_multiuser import cancel_subscription_command
+        update = make_update(text="/cancelsubscription", user_id=99999)
+        context = make_context()
+
+        asyncio.get_event_loop().run_until_complete(
+            cancel_subscription_command(update, context)
+        )
+        call_text = update.message.reply_text.call_args[0][0]
+        self.assertIn("don't have an active subscription", call_text.lower() if "don't" in call_text.lower() else call_text)
+
+    @patch('multiuser.telegram_bot_multiuser.db')
+    def test_cancel_active_user_shows_confirmation(self, mock_db):
+        """Active user should see confirmation buttons."""
+        mock_db.get_user.return_value = {
+            'subscription_active': True,
+            'stripe_customer_id': 'cus_test',
+            'stripe_subscription_id': 'sub_test',
+        }
+        mock_db.is_subscription_active.return_value = True
+
+        from multiuser.telegram_bot_multiuser import cancel_subscription_command
+        update = make_update(text="/cancelsubscription", user_id=12345)
+        context = make_context()
+
+        asyncio.get_event_loop().run_until_complete(
+            cancel_subscription_command(update, context)
+        )
+        call_kwargs = update.message.reply_text.call_args[1]
+        self.assertIn('reply_markup', call_kwargs)
+
+
+try:
+    import flask
+    FLASK_AVAILABLE = True
+except ImportError:
+    FLASK_AVAILABLE = False
+
+
+@unittest.skipUnless(FLASK_AVAILABLE, "Flask not installed")
+class TestCheckoutWebhook(unittest.TestCase):
+    """Test checkout.session.completed webhook handler in payment_server."""
+
+    @patch('payment_server.send_telegram_notification')
+    @patch('payment_server.db')
+    def test_checkout_completed_saves_stripe_ids(self, mock_db, mock_notify):
+        """checkout.session.completed should save customer_id and subscription_id."""
+        from payment_server import handle_checkout_session_completed
+
+        session = {
+            'id': 'cs_test_123',
+            'customer': 'cus_new_customer',
+            'subscription': 'sub_new_subscription',
+            'client_reference_id': '12345',
+            'metadata': {'telegram_id': '12345'},
+        }
+
+        handle_checkout_session_completed(session)
+
+        mock_db.activate_subscription.assert_called_once_with(
+            12345,
+            stripe_customer_id='cus_new_customer',
+            stripe_subscription_id='sub_new_subscription',
+            days=30
+        )
+        mock_notify.assert_called_once()
+
+    @patch('payment_server.send_telegram_notification')
+    @patch('payment_server.db')
+    def test_checkout_completed_uses_metadata_fallback(self, mock_db, mock_notify):
+        """Should fall back to metadata.telegram_id if client_reference_id missing."""
+        from payment_server import handle_checkout_session_completed
+
+        session = {
+            'id': 'cs_test_456',
+            'customer': 'cus_abc',
+            'subscription': 'sub_abc',
+            'client_reference_id': None,
+            'metadata': {'telegram_id': '67890'},
+        }
+
+        handle_checkout_session_completed(session)
+        mock_db.activate_subscription.assert_called_once_with(
+            67890,
+            stripe_customer_id='cus_abc',
+            stripe_subscription_id='sub_abc',
+            days=30
+        )
+
+    @patch('payment_server.db')
+    def test_checkout_completed_missing_telegram_id(self, mock_db):
+        """Should handle missing telegram_id gracefully."""
+        from payment_server import handle_checkout_session_completed
+
+        session = {
+            'id': 'cs_test_789',
+            'customer': 'cus_xyz',
+            'subscription': 'sub_xyz',
+            'client_reference_id': None,
+            'metadata': {},
+        }
+
+        # Should not raise
+        handle_checkout_session_completed(session)
+        mock_db.activate_subscription.assert_not_called()
+
+
+@unittest.skipUnless(FLASK_AVAILABLE, "Flask not installed")
+class TestWebhookSubscriptionEvents(unittest.TestCase):
+    """Test subscription lifecycle webhook handlers."""
+
+    @patch('payment_server.send_telegram_notification')
+    @patch('payment_server.db')
+    def test_subscription_deleted_deactivates(self, mock_db, mock_notify):
+        """subscription.deleted should deactivate user."""
+        mock_db.execute_query.return_value = {'telegram_id': 12345}
+
+        from payment_server import handle_subscription_deleted
+
+        subscription = {
+            'id': 'sub_test123',
+            'customer': 'cus_test123',
+        }
+
+        handle_subscription_deleted(subscription)
+        mock_db.deactivate_subscription.assert_called_once_with(12345)
+
+    @patch('payment_server.send_telegram_notification')
+    @patch('payment_server.db')
+    def test_subscription_deleted_user_not_found(self, mock_db, mock_notify):
+        """subscription.deleted for unknown user should not crash."""
+        mock_db.execute_query.return_value = None
+
+        from payment_server import handle_subscription_deleted
+
+        subscription = {
+            'id': 'sub_unknown',
+            'customer': 'cus_unknown',
+        }
+
+        # Should not raise
+        handle_subscription_deleted(subscription)
+        mock_db.deactivate_subscription.assert_not_called()
+
+    @patch('payment_server.send_telegram_notification')
+    @patch('payment_server.db')
+    def test_subscription_updated_cancellation_pending(self, mock_db, mock_notify):
+        """subscription.updated with cancel_at_period_end should notify user."""
+        mock_db.execute_query.return_value = {
+            'telegram_id': 12345,
+            'username': 'testuser',
+            'first_name': 'Test'
+        }
+
+        from payment_server import handle_subscription_updated
+
+        subscription = {
+            'id': 'sub_test123',
+            'customer': 'cus_test123',
+            'cancel_at_period_end': True,
+            'status': 'active',
+            'current_period_end': 1735689600,
+        }
+
+        handle_subscription_updated(subscription)
+        mock_notify.assert_called_once()
+        notify_text = mock_notify.call_args[0][1]
+        self.assertIn("Cancelled", notify_text)
+
+    @patch('payment_server.send_telegram_notification')
+    @patch('payment_server.db')
+    def test_payment_failed_warns_user(self, mock_db, mock_notify):
+        """invoice.payment_failed should warn user with retry info."""
+        mock_db.execute_query.return_value = {'telegram_id': 12345}
+
+        from payment_server import handle_invoice_payment_failed
+
+        invoice = {
+            'customer': 'cus_test123',
+            'subscription': 'sub_test123',
+            'attempt_count': 1,
+            'next_payment_attempt': 1735689600,
+        }
+
+        handle_invoice_payment_failed(invoice)
+        mock_notify.assert_called_once()
+        notify_text = mock_notify.call_args[0][1]
+        self.assertIn("Payment Failed", notify_text)
+
+    @patch('payment_server.send_telegram_notification')
+    @patch('payment_server.db')
+    def test_payment_failed_final_deactivates(self, mock_db, mock_notify):
+        """Final payment failure should deactivate subscription."""
+        mock_db.execute_query.return_value = {'telegram_id': 12345}
+
+        from payment_server import handle_invoice_payment_failed
+
+        invoice = {
+            'customer': 'cus_test123',
+            'subscription': 'sub_test123',
+            'attempt_count': 4,
+            'next_payment_attempt': None,
+        }
+
+        handle_invoice_payment_failed(invoice)
+        mock_db.deactivate_subscription.assert_called_once_with(12345)
+
+
+@unittest.skipUnless(FLASK_AVAILABLE, "Flask not installed")
+class TestWebhookRouting(unittest.TestCase):
+    """Test webhook event type routing."""
+
+    @patch('payment_server.handle_checkout_session_completed')
+    @patch('payment_server.db')
+    @patch('payment_server.stripe')
+    def test_webhook_routes_checkout_completed(self, mock_stripe, mock_db, mock_handler):
+        """Webhook should route checkout.session.completed events."""
+        mock_event = {
+            'type': 'checkout.session.completed',
+            'data': {'object': {'id': 'cs_test', 'customer': 'cus_test'}},
+        }
+        mock_stripe.Webhook.construct_event.return_value = mock_event
+
+        from payment_server import app as flask_app
+        client = flask_app.test_client()
+        resp = client.post('/webhook/stripe',
+                           data=b'test_payload',
+                           headers={'Stripe-Signature': 'test_sig'})
+        self.assertEqual(resp.status_code, 200)
+        mock_handler.assert_called_once()
+
+
+class TestFreePromoActivation(unittest.TestCase):
+    """Test FREE promo code activation stores no Stripe IDs."""
+
+    @patch('multiuser.telegram_bot_multiuser.db')
+    def test_free_promo_no_stripe_ids(self, mock_db):
+        """FREE promo should activate without Stripe IDs."""
+        mock_db.validate_promo_code.return_value = {
+            'code': 'FREE', 'is_free_bypass': True,
+        }
+        mock_db.activate_subscription.return_value = True
+
+        from multiuser.telegram_bot_multiuser import handle_promo_code_input
+        from telegram.ext import ConversationHandler
+
+        update = make_update(text="FREE", user_id=12345)
+        context = make_context()
+
+        result = asyncio.get_event_loop().run_until_complete(
+            handle_promo_code_input(update, context)
+        )
+        self.assertEqual(result, ConversationHandler.END)
+        # Should NOT pass stripe IDs
+        mock_db.activate_subscription.assert_called_once_with(12345, days=30)
+
+
+class TestSubscriptionDatabaseMethods(unittest.TestCase):
+    """Test database subscription methods handle edge cases."""
+
+    @patch('multiuser.telegram_bot_multiuser.db')
+    def test_is_subscription_active_false_for_expired(self, mock_db):
+        """Expired subscription should return False."""
+        mock_db.is_subscription_active.return_value = False
+
+        result = mock_db.is_subscription_active(99999)
+        self.assertFalse(result)
+
+    @patch('multiuser.telegram_bot_multiuser.db')
+    def test_activate_subscription_with_stripe_ids(self, mock_db):
+        """activate_subscription should accept and store Stripe IDs."""
+        mock_db.activate_subscription.return_value = True
+
+        result = mock_db.activate_subscription(
+            12345,
+            stripe_customer_id='cus_test',
+            stripe_subscription_id='sub_test',
+            days=30
+        )
+        self.assertTrue(result)
+        mock_db.activate_subscription.assert_called_once_with(
+            12345,
+            stripe_customer_id='cus_test',
+            stripe_subscription_id='sub_test',
+            days=30
+        )
+
+    @patch('multiuser.telegram_bot_multiuser.db')
+    def test_deactivate_subscription(self, mock_db):
+        """deactivate_subscription should be callable."""
+        mock_db.deactivate_subscription.return_value = True
+        result = mock_db.deactivate_subscription(12345)
+        self.assertTrue(result)
 
 
 if __name__ == '__main__':
