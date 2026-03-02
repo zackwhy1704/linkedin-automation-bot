@@ -223,27 +223,34 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if context.args:
         param = context.args[0]
 
-        # Handle payment success - automatically activate subscription
+        # Handle payment success - activate subscription and ensure Stripe IDs are saved
         if param == 'payment_success':
             if not db.is_subscription_active(telegram_id):
                 db.activate_subscription(telegram_id, days=30)
 
-                await update.message.reply_text(
-                    "🎉 Payment Successful!\n\n"
-                    "Your subscription has been automatically activated!\n\n"
-                    "You now have full access to:\n"
-                    "✓ AI-generated posts\n"
-                    "✓ Smart feed engagement\n"
-                    "✓ Automated networking\n"
-                    "✓ Analytics dashboard\n\n"
-                    "🚀 Ready to grow? Send /autopilot to start!\n\n"
-                    "Need help? Send /help"
-                )
-            else:
-                await update.message.reply_text(
-                    "✅ Your subscription is already active!\n\n"
-                    "Send /autopilot to start automating."
-                )
+            # Ensure Stripe IDs are saved (payment_success page should have done this,
+            # but this is a safety net in case it was missed)
+            try:
+                user_data = db.get_user(telegram_id)
+                if user_data and not user_data.get('stripe_subscription_id'):
+                    # IDs not saved yet — try to find via Stripe search
+                    found = await _try_find_stripe_subscription(telegram_id)
+                    if found:
+                        logger.info(f"Backfilled Stripe IDs for user {telegram_id} via deep link")
+            except Exception as e:
+                logger.warning(f"Could not backfill Stripe IDs for {telegram_id}: {e}")
+
+            await update.message.reply_text(
+                "🎉 Payment Successful!\n\n"
+                "Your subscription has been automatically activated!\n\n"
+                "You now have full access to:\n"
+                "- AI-generated posts\n"
+                "- Smart feed engagement\n"
+                "- Automated networking\n"
+                "- Analytics dashboard\n\n"
+                "Send /autopilot to start!\n\n"
+                "Need help? Send /help"
+            )
             return ConversationHandler.END
 
         # Handle payment cancellation
@@ -849,7 +856,7 @@ async def handle_promo_code_input(update: Update, context: ContextTypes.DEFAULT_
                 subscription_data={
                     'trial_period_days': 7,  # 7-day free trial before first charge
                 },
-                success_url=f'{PAYMENT_SERVER_URL}/payment/success?bot={context.bot.username}',
+                success_url=f'{PAYMENT_SERVER_URL}/payment/success?bot={context.bot.username}&session_id={{CHECKOUT_SESSION_ID}}',
                 cancel_url=f'{PAYMENT_SERVER_URL}/payment/cancel?bot={context.bot.username}',
                 client_reference_id=str(telegram_id),
                 metadata={
@@ -930,7 +937,7 @@ async def handle_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE
                 'quantity': 1,
             }],
             mode='subscription',
-            success_url=f'{PAYMENT_SERVER_URL}/payment/success?bot={context.bot.username}',
+            success_url=f'{PAYMENT_SERVER_URL}/payment/success?bot={context.bot.username}&session_id={{CHECKOUT_SESSION_ID}}',
             cancel_url=f'{PAYMENT_SERVER_URL}/payment/cancel?bot={context.bot.username}',
             client_reference_id=str(telegram_id),
             metadata={'telegram_id': str(telegram_id)},

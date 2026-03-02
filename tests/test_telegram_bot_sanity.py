@@ -184,11 +184,14 @@ class TestOnboardingFlow(unittest.TestCase):
         result = asyncio.get_event_loop().run_until_complete(start(update, context))
         self.assertEqual(result, ConversationHandler.END)
 
+    @patch('multiuser.telegram_bot_multiuser._try_find_stripe_subscription', new_callable=AsyncMock)
     @patch('multiuser.telegram_bot_multiuser.db')
-    def test_start_payment_success_activates(self, mock_db):
+    def test_start_payment_success_activates(self, mock_db, mock_search):
         """Deep link with payment_success should activate subscription."""
         mock_db.is_subscription_active.return_value = False
         mock_db.activate_subscription.return_value = True
+        mock_db.get_user.return_value = {'stripe_subscription_id': None}
+        mock_search.return_value = None
 
         from multiuser.telegram_bot_multiuser import start
         from telegram.ext import ConversationHandler
@@ -198,6 +201,39 @@ class TestOnboardingFlow(unittest.TestCase):
         result = asyncio.get_event_loop().run_until_complete(start(update, context))
         self.assertEqual(result, ConversationHandler.END)
         mock_db.activate_subscription.assert_called_once()
+
+    @patch('multiuser.telegram_bot_multiuser._try_find_stripe_subscription', new_callable=AsyncMock)
+    @patch('multiuser.telegram_bot_multiuser.db')
+    def test_start_payment_success_backfills_stripe_ids(self, mock_db, mock_search):
+        """Deep link should try to backfill Stripe IDs if missing."""
+        mock_db.is_subscription_active.return_value = True
+        mock_db.get_user.return_value = {'stripe_subscription_id': None}
+        mock_search.return_value = 'sub_found_123'
+
+        from multiuser.telegram_bot_multiuser import start
+        from telegram.ext import ConversationHandler
+        update = make_update(text="/start")
+        context = make_context(args=['payment_success'])
+
+        result = asyncio.get_event_loop().run_until_complete(start(update, context))
+        self.assertEqual(result, ConversationHandler.END)
+        mock_search.assert_called_once_with(12345)
+
+    @patch('multiuser.telegram_bot_multiuser._try_find_stripe_subscription', new_callable=AsyncMock)
+    @patch('multiuser.telegram_bot_multiuser.db')
+    def test_start_payment_success_skips_backfill_if_ids_present(self, mock_db, mock_search):
+        """Deep link should NOT search Stripe if IDs already saved."""
+        mock_db.is_subscription_active.return_value = True
+        mock_db.get_user.return_value = {'stripe_subscription_id': 'sub_existing'}
+
+        from multiuser.telegram_bot_multiuser import start
+        from telegram.ext import ConversationHandler
+        update = make_update(text="/start")
+        context = make_context(args=['payment_success'])
+
+        result = asyncio.get_event_loop().run_until_complete(start(update, context))
+        self.assertEqual(result, ConversationHandler.END)
+        mock_search.assert_not_called()
 
     @patch('multiuser.telegram_bot_multiuser.db')
     def test_start_payment_cancel_shows_retry(self, mock_db):
@@ -1588,6 +1624,103 @@ class TestFreePromoActivation(unittest.TestCase):
         self.assertEqual(result, ConversationHandler.END)
         # Should NOT pass stripe IDs
         mock_db.activate_subscription.assert_called_once_with(12345, days=30)
+
+
+class TestStripeCheckoutSessionId(unittest.TestCase):
+    """Verify success_url includes {CHECKOUT_SESSION_ID} for all Stripe checkouts."""
+
+    @patch('multiuser.telegram_bot_multiuser.stripe')
+    @patch('multiuser.telegram_bot_multiuser.db')
+    def test_regular_checkout_includes_session_id(self, mock_db, mock_stripe):
+        """Regular Stripe checkout success_url should contain CHECKOUT_SESSION_ID."""
+        mock_session = MagicMock()
+        mock_session.url = "https://checkout.stripe.com/test"
+        mock_stripe.checkout.Session.create.return_value = mock_session
+
+        from multiuser.telegram_bot_multiuser import handle_subscription
+        from telegram.ext import ConversationHandler
+
+        update = make_update(callback_data='subscribe_daily', user_id=12345)
+        context = make_context(bot_username='TestBot')
+
+        asyncio.get_event_loop().run_until_complete(handle_subscription(update, context))
+        call_kwargs = mock_stripe.checkout.Session.create.call_args[1]
+        self.assertIn('{CHECKOUT_SESSION_ID}', call_kwargs['success_url'])
+        self.assertIn('session_id=', call_kwargs['success_url'])
+
+    @patch('multiuser.telegram_bot_multiuser.stripe')
+    @patch('multiuser.telegram_bot_multiuser.db')
+    def test_freetrial_checkout_includes_session_id(self, mock_db, mock_stripe):
+        """FREETRIAL checkout success_url should contain CHECKOUT_SESSION_ID."""
+        mock_db.validate_promo_code.return_value = {
+            'code': 'FREETRIAL', 'is_freetrial': True,
+        }
+        mock_session = MagicMock()
+        mock_session.url = "https://checkout.stripe.com/trial"
+        mock_stripe.checkout.Session.create.return_value = mock_session
+
+        from multiuser.telegram_bot_multiuser import handle_promo_code_input
+        from telegram.ext import ConversationHandler
+
+        update = make_update(text="FREETRIAL", user_id=12345)
+        context = make_context(bot_username='TestBot')
+
+        asyncio.get_event_loop().run_until_complete(handle_promo_code_input(update, context))
+        call_kwargs = mock_stripe.checkout.Session.create.call_args[1]
+        self.assertIn('{CHECKOUT_SESSION_ID}', call_kwargs['success_url'])
+        self.assertIn('session_id=', call_kwargs['success_url'])
+
+
+@unittest.skipUnless(FLASK_AVAILABLE, "Flask not installed")
+class TestPaymentSuccessRoute(unittest.TestCase):
+    """Test payment success page saves Stripe IDs when session_id is present."""
+
+    @patch('payment_server.db')
+    @patch('payment_server.stripe')
+    def test_success_page_saves_stripe_ids(self, mock_stripe, mock_db):
+        """Payment success page with session_id should retrieve and save Stripe IDs."""
+        mock_checkout = MagicMock()
+        mock_checkout.get.side_effect = lambda k, d=None: {
+            'customer': 'cus_new',
+            'subscription': 'sub_new',
+            'client_reference_id': '12345',
+            'metadata': {'telegram_id': '12345'},
+        }.get(k, d)
+        mock_stripe.checkout.Session.retrieve.return_value = mock_checkout
+
+        from payment_server import app as flask_app
+        client = flask_app.test_client()
+        resp = client.get('/payment/success?bot=TestBot&session_id=cs_test_123')
+        self.assertEqual(resp.status_code, 200)
+        mock_stripe.checkout.Session.retrieve.assert_called_once_with('cs_test_123')
+        mock_db.activate_subscription.assert_called_once_with(
+            12345,
+            stripe_customer_id='cus_new',
+            stripe_subscription_id='sub_new',
+            days=30
+        )
+
+    @patch('payment_server.db')
+    @patch('payment_server.stripe')
+    def test_success_page_no_session_id_still_works(self, mock_stripe, mock_db):
+        """Payment success page without session_id should still render."""
+        from payment_server import app as flask_app
+        client = flask_app.test_client()
+        resp = client.get('/payment/success?bot=TestBot')
+        self.assertEqual(resp.status_code, 200)
+        mock_stripe.checkout.Session.retrieve.assert_not_called()
+
+    @patch('payment_server.db')
+    @patch('payment_server.stripe')
+    def test_success_page_handles_stripe_error(self, mock_stripe, mock_db):
+        """Payment success page should not crash if Stripe retrieval fails."""
+        mock_stripe.checkout.Session.retrieve.side_effect = Exception("Stripe down")
+
+        from payment_server import app as flask_app
+        client = flask_app.test_client()
+        resp = client.get('/payment/success?bot=TestBot&session_id=cs_bad')
+        self.assertEqual(resp.status_code, 200)
+        mock_db.activate_subscription.assert_not_called()
 
 
 class TestSubscriptionDatabaseMethods(unittest.TestCase):

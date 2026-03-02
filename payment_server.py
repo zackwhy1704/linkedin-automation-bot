@@ -34,8 +34,36 @@ db = BotDatabase()
 
 @app.route('/payment/success')
 def payment_success():
-    """Success page that auto-closes the webview"""
+    """Success page — retrieve Stripe session, save IDs, then show confirmation."""
     bot_username = request.args.get('bot', '')
+    session_id = request.args.get('session_id', '')
+
+    # If we have a session_id, retrieve the full session and save Stripe IDs
+    if session_id:
+        try:
+            checkout_session = stripe.checkout.Session.retrieve(session_id)
+            customer_id = checkout_session.get('customer')
+            subscription_id = checkout_session.get('subscription')
+            telegram_id_str = (
+                checkout_session.get('client_reference_id')
+                or checkout_session.get('metadata', {}).get('telegram_id')
+            )
+
+            if telegram_id_str and (customer_id or subscription_id):
+                telegram_id = int(telegram_id_str)
+                db.activate_subscription(
+                    telegram_id,
+                    stripe_customer_id=customer_id,
+                    stripe_subscription_id=subscription_id,
+                    days=30
+                )
+                logger.info(
+                    f"Payment success: saved Stripe IDs for user {telegram_id} "
+                    f"(customer={customer_id}, subscription={subscription_id})"
+                )
+        except Exception as e:
+            logger.error(f"Error retrieving checkout session {session_id}: {e}")
+
     return render_template('payment_success.html'), 200, {
         'Content-Type': 'text/html; charset=utf-8'
     }
