@@ -2882,14 +2882,21 @@ async def handle_cancel_subscription_callback(update: Update, context: ContextTy
             )
 
             # Get period end — handle both old API (subscription.current_period_end)
-            # and new API 2025-03-31+ (subscription.items.data[0].current_period_end)
+            # and new API 2025-03-31+ (subscription.items is a method, cancel_at field)
             period_end = getattr(subscription, 'current_period_end', None)
             if period_end is None:
                 try:
                     items = getattr(subscription, 'items', None)
-                    if items and hasattr(items, 'data') and items.data:
-                        period_end = getattr(items.data[0], 'current_period_end', None)
-                except (AttributeError, IndexError):
+                    if callable(items):
+                        items_result = items()
+                        item_list = getattr(items_result, 'data', []) if items_result else []
+                    elif items and hasattr(items, 'data'):
+                        item_list = items.data
+                    else:
+                        item_list = []
+                    if item_list:
+                        period_end = getattr(item_list[0], 'current_period_end', None)
+                except (AttributeError, IndexError, TypeError):
                     pass
             if period_end is None:
                 period_end = getattr(subscription, 'cancel_at', None)

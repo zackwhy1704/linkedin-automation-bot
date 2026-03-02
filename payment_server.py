@@ -264,10 +264,22 @@ def _get_subscription_period_end(subscription):
     if period_end is None:
         try:
             items = getattr(subscription, 'items', None)
-            if items and hasattr(items, 'data') and items.data:
-                period_end = getattr(items.data[0], 'current_period_end', None)
+            # In Stripe SDK v14+, items may be a method
+            if callable(items):
+                items_result = items()
+                item_list = getattr(items_result, 'data', []) if items_result else []
+            elif items and hasattr(items, 'data'):
+                item_list = items.data
+            else:
+                item_list = []
+
+            if item_list:
+                period_end = getattr(item_list[0], 'current_period_end', None)
                 if period_end is None:
-                    period_end = items.data[0].get('current_period_end')
+                    try:
+                        period_end = item_list[0].get('current_period_end')
+                    except (AttributeError, TypeError):
+                        pass
         except (AttributeError, IndexError, KeyError, TypeError):
             pass
 
@@ -294,8 +306,21 @@ def handle_subscription_updated(subscription):
         status = getattr(subscription, 'status', None) or subscription.get('status')
         current_period_end = _get_subscription_period_end(subscription)
 
+        # Also check cancel_at (Stripe portal uses this in newer API versions)
+        cancel_at = getattr(subscription, 'cancel_at', None)
+        if cancel_at is None:
+            try:
+                cancel_at = subscription.get('cancel_at')
+            except (AttributeError, TypeError):
+                pass
+
+        # Determine if this is a cancellation: either cancel_at_period_end=True
+        # or cancel_at is set to a future timestamp
+        is_cancelling = cancel_at_period_end or (cancel_at and cancel_at > 0)
+
         logger.info(f"Subscription updated: {subscription_id}, status={status}, "
-                     f"cancel_at_period_end={cancel_at_period_end}, period_end={current_period_end}")
+                     f"cancel_at_period_end={cancel_at_period_end}, cancel_at={cancel_at}, "
+                     f"period_end={current_period_end}")
 
         # Find user by Stripe customer ID
         user = db.execute_query("""
@@ -311,12 +336,14 @@ def handle_subscription_updated(subscription):
         telegram_id = user['telegram_id']
 
         # Check if this is a cancellation
-        if cancel_at_period_end:
+        if is_cancelling:
             # Subscription is marked for cancellation — keep active until period end
             logger.info(f"Subscription {subscription_id} marked for cancellation for user {telegram_id}")
 
-            if current_period_end:
-                cancel_date_ts = datetime.fromtimestamp(current_period_end)
+            # Determine the cancel date: prefer current_period_end, fall back to cancel_at
+            effective_cancel_ts = current_period_end or cancel_at
+            if effective_cancel_ts:
+                cancel_date_ts = datetime.fromtimestamp(effective_cancel_ts)
                 cancel_date = cancel_date_ts.strftime('%B %d, %Y')
             else:
                 cancel_date_ts = None
@@ -356,7 +383,7 @@ def handle_subscription_updated(subscription):
                 f"Thank you for using LinkedInGrowthBot! 💙"
             )
 
-        elif status == 'active' and not cancel_at_period_end:
+        elif status == 'active' and not is_cancelling:
             # Subscription reactivated (user uncancelled)
             logger.info(f"Subscription {subscription_id} reactivated for user {telegram_id}")
 

@@ -3741,12 +3741,15 @@ class TestE2EForceCancel(unittest.TestCase):
         }
         mock_stripe.error = real_stripe.error
 
-        mock_sub = MagicMock()
-        mock_sub.current_period_end = None
-        mock_sub.cancel_at = None
-        mock_sub.items = MagicMock()
-        mock_sub.items.data = []
-        mock_stripe.Subscription.modify.return_value = mock_sub
+        # Create a mock that precisely simulates a Stripe v14 sub with no period_end
+        class FakeEmptySub:
+            current_period_end = None
+            cancel_at = None
+            def items(self):
+                class Result:
+                    data = []
+                return Result()
+        mock_stripe.Subscription.modify.return_value = FakeEmptySub()
 
         update = make_update(callback_data='force_cancel_sub', user_id=12345)
         context = make_context()
