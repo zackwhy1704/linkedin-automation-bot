@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Payment Cancelled</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -52,32 +53,57 @@
         <p>No worries! You can subscribe anytime when you're ready.</p>
 
         <a id="telegram-link" class="btn btn-primary" href="#">Return to Telegram Bot</a>
-        <p class="countdown" id="countdown">Redirecting in 3...</p>
+        <p class="countdown" id="countdown">Closing in 3...</p>
     </div>
 
     <script>
-        const params = new URLSearchParams(window.location.search);
-        const botUsername = params.get('bot') || '';
-        const telegramUrl = botUsername
+        var params = new URLSearchParams(window.location.search);
+        var botUsername = params.get('bot') || '';
+        var telegramUrl = botUsername
             ? 'https://t.me/' + botUsername + '?start=payment_cancel'
-            : '#';
+            : '';
 
-        document.getElementById('telegram-link').href = telegramUrl;
+        var linkEl = document.getElementById('telegram-link');
+        if (telegramUrl) {
+            linkEl.href = telegramUrl;
+        } else {
+            linkEl.style.display = 'none';
+        }
 
-        let seconds = 3;
-        const countdownEl = document.getElementById('countdown');
-        const timer = setInterval(function() {
+        var isTelegramWebApp = !!(window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData);
+        var seconds = 3;
+        var countdownEl = document.getElementById('countdown');
+
+        if (isTelegramWebApp) {
+            countdownEl.textContent = 'Closing in 3...';
+        } else {
+            countdownEl.textContent = telegramUrl ? 'Redirecting in 3...' : 'You can close this page.';
+        }
+
+        var timer = setInterval(function() {
             seconds--;
             if (seconds > 0) {
-                countdownEl.textContent = 'Redirecting in ' + seconds + '...';
+                countdownEl.textContent = (isTelegramWebApp ? 'Closing' : 'Redirecting') + ' in ' + seconds + '...';
             } else {
-                countdownEl.textContent = 'Redirecting now...';
                 clearInterval(timer);
-                if (telegramUrl !== '#') {
+                if (isTelegramWebApp) {
+                    countdownEl.textContent = 'Returning to bot...';
+                    try { window.Telegram.WebApp.close(); } catch(e) {}
+                } else if (telegramUrl) {
+                    countdownEl.textContent = 'Redirecting now...';
                     window.location.href = telegramUrl;
+                } else {
+                    countdownEl.textContent = 'You can close this page.';
                 }
             }
         }, 1000);
+
+        linkEl.addEventListener('click', function(e) {
+            if (isTelegramWebApp) {
+                e.preventDefault();
+                try { window.Telegram.WebApp.close(); } catch(err) {}
+            }
+        });
     </script>
 </body>
 </html>

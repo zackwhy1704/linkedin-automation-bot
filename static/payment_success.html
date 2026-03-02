@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Payment Successful</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -79,34 +80,64 @@
         </div>
 
         <a id="telegram-link" class="btn" href="#">Open Telegram Bot</a>
-        <p class="countdown" id="countdown">Redirecting in 3...</p>
+        <p class="countdown" id="countdown">Closing in 3...</p>
     </div>
 
     <script>
-        const params = new URLSearchParams(window.location.search);
-        const botUsername = params.get('bot') || '';
-        const telegramUrl = botUsername
+        var params = new URLSearchParams(window.location.search);
+        var botUsername = params.get('bot') || '';
+        var telegramUrl = botUsername
             ? 'https://t.me/' + botUsername + '?start=payment_success'
-            : '#';
+            : '';
 
         // Set the button link
-        document.getElementById('telegram-link').href = telegramUrl;
+        var linkEl = document.getElementById('telegram-link');
+        if (telegramUrl) {
+            linkEl.href = telegramUrl;
+        } else {
+            linkEl.style.display = 'none';
+        }
 
-        // Auto-redirect countdown
-        let seconds = 3;
-        const countdownEl = document.getElementById('countdown');
-        const timer = setInterval(function() {
+        // Detect if running inside Telegram WebApp
+        var isTelegramWebApp = !!(window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData);
+
+        // Auto-close / redirect countdown
+        var seconds = 3;
+        var countdownEl = document.getElementById('countdown');
+
+        if (isTelegramWebApp) {
+            countdownEl.textContent = 'Closing in 3...';
+        } else {
+            countdownEl.textContent = telegramUrl ? 'Redirecting in 3...' : 'Payment complete!';
+        }
+
+        var timer = setInterval(function() {
             seconds--;
             if (seconds > 0) {
-                countdownEl.textContent = 'Redirecting in ' + seconds + '...';
+                countdownEl.textContent = (isTelegramWebApp ? 'Closing' : 'Redirecting') + ' in ' + seconds + '...';
             } else {
-                countdownEl.textContent = 'Redirecting now...';
                 clearInterval(timer);
-                if (telegramUrl !== '#') {
+                if (isTelegramWebApp) {
+                    // Close the Telegram WebApp webview
+                    countdownEl.textContent = 'Returning to bot...';
+                    try { window.Telegram.WebApp.close(); } catch(e) {}
+                } else if (telegramUrl) {
+                    // Regular browser — redirect to Telegram deep link
+                    countdownEl.textContent = 'Redirecting now...';
                     window.location.href = telegramUrl;
+                } else {
+                    countdownEl.textContent = 'You can close this page.';
                 }
             }
         }, 1000);
+
+        // Also handle the button click in Telegram WebApp
+        linkEl.addEventListener('click', function(e) {
+            if (isTelegramWebApp) {
+                e.preventDefault();
+                try { window.Telegram.WebApp.close(); } catch(err) {}
+            }
+        });
     </script>
 </body>
 </html>

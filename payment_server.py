@@ -81,7 +81,6 @@ def cancel_complete():
     """Page shown after user returns from Stripe portal — auto-redirects to Telegram"""
     telegram_id = request.args.get('telegram_id', '')
     bot_token = os.getenv('TELEGRAM_BOT_TOKEN', '')
-    # Extract bot username from token (first part is bot ID)
     bot_username = ''
     try:
         import requests as req
@@ -91,7 +90,7 @@ def cancel_complete():
     except Exception:
         pass
 
-    telegram_url = f'https://t.me/{bot_username}' if bot_username else '#'
+    telegram_url = f'https://t.me/{bot_username}' if bot_username else ''
 
     return f"""
     <!DOCTYPE html>
@@ -100,6 +99,7 @@ def cancel_complete():
         <title>Cancellation Processing</title>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
+        <script src="https://telegram.org/js/telegram-web-app.js"></script>
         <style>
             * {{ margin: 0; padding: 0; box-sizing: border-box; }}
             body {{
@@ -130,18 +130,42 @@ def cancel_complete():
             <h1>&#10003;</h1>
             <p><strong>Cancellation processed</strong></p>
             <p>Check your Telegram bot for confirmation details.</p>
-            <a class="btn" href="{telegram_url}">Return to Telegram Bot</a>
-            <p class="countdown" id="countdown">Redirecting in 3...</p>
+            <a class="btn" id="telegram-link" href="{telegram_url or '#'}">Return to Telegram Bot</a>
+            <p class="countdown" id="countdown">Closing in 3...</p>
         </div>
         <script>
             var seconds = 3;
             var url = "{telegram_url}";
             var el = document.getElementById('countdown');
+            var linkEl = document.getElementById('telegram-link');
+            var isTelegramWebApp = !!(window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData);
+
+            if (!url) {{ linkEl.style.display = 'none'; }}
+
             var t = setInterval(function() {{
                 seconds--;
-                if (seconds > 0) {{ el.textContent = 'Redirecting in ' + seconds + '...'; }}
-                else {{ el.textContent = 'Redirecting now...'; clearInterval(t); if (url !== '#') window.location.href = url; }}
+                if (seconds > 0) {{
+                    el.textContent = (isTelegramWebApp ? 'Closing' : 'Redirecting') + ' in ' + seconds + '...';
+                }} else {{
+                    clearInterval(t);
+                    if (isTelegramWebApp) {{
+                        el.textContent = 'Returning to bot...';
+                        try {{ window.Telegram.WebApp.close(); }} catch(e) {{}}
+                    }} else if (url) {{
+                        el.textContent = 'Redirecting now...';
+                        window.location.href = url;
+                    }} else {{
+                        el.textContent = 'You can close this page.';
+                    }}
+                }}
             }}, 1000);
+
+            linkEl.addEventListener('click', function(e) {{
+                if (isTelegramWebApp) {{
+                    e.preventDefault();
+                    try {{ window.Telegram.WebApp.close(); }} catch(err) {{}}
+                }}
+            }});
         </script>
     </body>
     </html>
