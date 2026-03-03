@@ -46,6 +46,16 @@ from cryptography.fernet import Fernet
 TEST_FERNET_KEY = Fernet.generate_key()
 os.environ['ENCRYPTION_KEY'] = TEST_FERNET_KEY.decode()
 
+# ─── Pre-import payment_server with mocked DB ─────────────────────────────
+# payment_server.py runs `db = BotDatabase()` at module level, which tries
+# to open a real PostgreSQL connection. Mock BotDatabase before importing so
+# the module gets a mock db instead of failing on missing local postgres.
+import flask  # required dependency
+from unittest.mock import patch as _patch
+with _patch('bot_database_postgres.BotDatabase') as _MockDB:
+    _MockDB.return_value = MagicMock()
+    import payment_server  # noqa: F401 — pre-imported for @patch decorators
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # HELPER: Build fake Telegram Update / Context objects
@@ -90,6 +100,37 @@ def make_context(user_data=None, args=None, bot_username="TestBot"):
     context.bot.username = bot_username
     context.bot.send_message = AsyncMock()
     return context
+
+
+class FakeStripeItems:
+    """Fake Stripe items with .data attribute (non-callable, like Stripe SDK < v14)."""
+    def __init__(self, data=None):
+        self.data = data or []
+
+
+class FakeStripeSub:
+    """Fake Stripe subscription object that behaves like a real Stripe object.
+    Unlike MagicMock, accessing undefined attributes raises AttributeError and
+    __getitem__ raises KeyError — matching real Stripe object behavior."""
+    def __init__(self, **kwargs):
+        self._data = kwargs
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+        # Ensure items is always a FakeStripeItems if not explicitly provided
+        if 'items' not in kwargs:
+            self.items = FakeStripeItems()
+
+    def get(self, key, default=None):
+        return self._data.get(key, default)
+
+    def __getitem__(self, key):
+        try:
+            return self._data[key]
+        except KeyError:
+            raise KeyError(key)
+
+    def __contains__(self, key):
+        return key in self._data
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1029,14 +1070,6 @@ class TestScreenshotHandler(unittest.TestCase):
 # TEST: Payment Server Webhook
 # ═══════════════════════════════════════════════════════════════════════════
 
-try:
-    import flask as _flask_check
-    _HAS_FLASK = True
-except ImportError:
-    _HAS_FLASK = False
-
-
-@unittest.skipUnless(_HAS_FLASK, "Flask not installed")
 class TestPaymentServer(unittest.TestCase):
     """Test payment server endpoints."""
 
@@ -1401,14 +1434,6 @@ class TestCancelCommand(unittest.TestCase):
         self.assertIn('reply_markup', call_kwargs)
 
 
-try:
-    import flask
-    FLASK_AVAILABLE = True
-except ImportError:
-    FLASK_AVAILABLE = False
-
-
-@unittest.skipUnless(FLASK_AVAILABLE, "Flask not installed")
 class TestCheckoutWebhook(unittest.TestCase):
     """Test checkout.session.completed webhook handler in payment_server."""
 
@@ -1476,7 +1501,7 @@ class TestCheckoutWebhook(unittest.TestCase):
         mock_db.activate_subscription.assert_not_called()
 
 
-@unittest.skipUnless(FLASK_AVAILABLE, "Flask not installed")
+
 class TestWebhookSubscriptionEvents(unittest.TestCase):
     """Test subscription lifecycle webhook handlers."""
 
@@ -1577,7 +1602,7 @@ class TestWebhookSubscriptionEvents(unittest.TestCase):
         mock_db.deactivate_subscription.assert_called_once_with(12345)
 
 
-@unittest.skipUnless(FLASK_AVAILABLE, "Flask not installed")
+
 class TestWebhookRouting(unittest.TestCase):
     """Test webhook event type routing."""
 
@@ -1671,7 +1696,7 @@ class TestStripeCheckoutSessionId(unittest.TestCase):
         self.assertIn('session_id=', call_kwargs['success_url'])
 
 
-@unittest.skipUnless(FLASK_AVAILABLE, "Flask not installed")
+
 class TestPaymentSuccessRoute(unittest.TestCase):
     """Test payment success page saves Stripe IDs when session_id is present."""
 
@@ -2419,7 +2444,7 @@ class TestPaymentSuccessDeepLinkEdgeCases(unittest.TestCase):
 # TEST: Payment Server Webhook Handler Edge Cases
 # ═══════════════════════════════════════════════════════════════════════════
 
-@unittest.skipUnless(FLASK_AVAILABLE, "Flask not installed")
+
 class TestCheckoutWebhookEdgeCases(unittest.TestCase):
     """Extended checkout.session.completed webhook handler tests."""
 
@@ -2544,7 +2569,7 @@ class TestCheckoutWebhookEdgeCases(unittest.TestCase):
         mock_db.activate_subscription.assert_called_once()
 
 
-@unittest.skipUnless(FLASK_AVAILABLE, "Flask not installed")
+
 class TestSubscriptionUpdatedEdgeCases(unittest.TestCase):
     """Extended subscription.updated webhook handler tests."""
 
@@ -2647,7 +2672,7 @@ class TestSubscriptionUpdatedEdgeCases(unittest.TestCase):
         self.assertEqual(mock_notify.call_count, 2)
 
 
-@unittest.skipUnless(FLASK_AVAILABLE, "Flask not installed")
+
 class TestInvoicePaymentFailedEdgeCases(unittest.TestCase):
     """Extended invoice.payment_failed webhook handler tests."""
 
@@ -2728,7 +2753,7 @@ class TestInvoicePaymentFailedEdgeCases(unittest.TestCase):
         mock_db.deactivate_subscription.assert_called_once_with(12345)
 
 
-@unittest.skipUnless(FLASK_AVAILABLE, "Flask not installed")
+
 class TestWebhookRoutingEdgeCases(unittest.TestCase):
     """Extended webhook routing tests."""
 
@@ -2824,7 +2849,7 @@ class TestWebhookRoutingEdgeCases(unittest.TestCase):
         self.assertEqual(resp.status_code, 400)
 
 
-@unittest.skipUnless(FLASK_AVAILABLE, "Flask not installed")
+
 class TestPaymentSuccessRouteEdgeCases(unittest.TestCase):
     """Extended tests for /payment/success endpoint."""
 
@@ -2994,7 +3019,7 @@ class TestPaymentHtmlPages(unittest.TestCase):
         self.assertIn('preventDefault', content)
 
 
-@unittest.skipUnless(FLASK_AVAILABLE, "Flask not installed")
+
 class TestCancelCompleteWebApp(unittest.TestCase):
     """Test cancel-complete page has WebApp.close() support."""
 
@@ -3371,7 +3396,7 @@ class TestSubscriptionLifecycle(unittest.TestCase):
 # Tests for current_period_end migration (subscription-level → item-level)
 # ═══════════════════════════════════════════════════════════════════════════
 
-@unittest.skipUnless(FLASK_AVAILABLE, "Flask not installed")
+
 class TestGetSubscriptionPeriodEnd(unittest.TestCase):
     """Test _get_subscription_period_end helper for Stripe API compatibility."""
 
@@ -3384,47 +3409,40 @@ class TestGetSubscriptionPeriodEnd(unittest.TestCase):
     def test_object_with_current_period_end_attr(self):
         """Stripe object with current_period_end as attribute."""
         from payment_server import _get_subscription_period_end
-        sub = MagicMock()
-        sub.current_period_end = 1735689600
-        sub.get = MagicMock(side_effect=KeyError)
+        sub = FakeStripeSub(current_period_end=1735689600)
         result = _get_subscription_period_end(sub)
         self.assertEqual(result, 1735689600)
 
     def test_new_api_item_level_period_end(self):
         """Stripe v14+ API: current_period_end on items.data[0]."""
         from payment_server import _get_subscription_period_end
-        sub = MagicMock()
-        sub.current_period_end = None  # Removed from subscription level
-        sub.get = MagicMock(side_effect=KeyError)
-
-        item = MagicMock()
-        item.current_period_end = 1735689600
-        sub.items.data = [item]
-
+        item = FakeStripeSub(current_period_end=1735689600)
+        sub = FakeStripeSub(
+            current_period_end=None,
+            items=FakeStripeItems(data=[item]),
+        )
         result = _get_subscription_period_end(sub)
         self.assertEqual(result, 1735689600)
 
     def test_fallback_to_cancel_at(self):
         """When current_period_end is missing everywhere, fall back to cancel_at."""
         from payment_server import _get_subscription_period_end
-        sub = MagicMock()
-        sub.current_period_end = None
-        sub.items.data = []  # No items
-        sub.cancel_at = 1735689600
-        sub.get = MagicMock(side_effect=KeyError)
-
+        sub = FakeStripeSub(
+            current_period_end=None,
+            items=FakeStripeItems(data=[]),
+            cancel_at=1735689600,
+        )
         result = _get_subscription_period_end(sub)
         self.assertEqual(result, 1735689600)
 
     def test_all_none_returns_none(self):
         """When nothing is available, return None."""
         from payment_server import _get_subscription_period_end
-        sub = MagicMock()
-        sub.current_period_end = None
-        sub.items.data = []
-        sub.cancel_at = None
-        sub.get = MagicMock(side_effect=KeyError)
-
+        sub = FakeStripeSub(
+            current_period_end=None,
+            items=FakeStripeItems(data=[]),
+            cancel_at=None,
+        )
         result = _get_subscription_period_end(sub)
         self.assertIsNone(result)
 
@@ -3436,7 +3454,7 @@ class TestGetSubscriptionPeriodEnd(unittest.TestCase):
         self.assertIsNone(result)
 
 
-@unittest.skipUnless(FLASK_AVAILABLE, "Flask not installed")
+
 class TestSubscriptionUpdatedStripeV14(unittest.TestCase):
     """Test handle_subscription_updated with Stripe v14 object format."""
 
@@ -3452,20 +3470,16 @@ class TestSubscriptionUpdatedStripeV14(unittest.TestCase):
 
         from payment_server import handle_subscription_updated
 
-        # Simulate Stripe v14 object (attribute access)
-        sub = MagicMock()
-        sub.customer = 'cus_v14'
-        sub.id = 'sub_v14'
-        sub.cancel_at_period_end = True
-        sub.status = 'active'
-        sub.current_period_end = None  # Removed in new API
-        sub.cancel_at = None
-        sub.get = MagicMock(side_effect=KeyError)
-
-        # Period end is on items
-        item = MagicMock()
-        item.current_period_end = 1735689600
-        sub.items.data = [item]
+        item = FakeStripeSub(current_period_end=1735689600)
+        sub = FakeStripeSub(
+            customer='cus_v14',
+            id='sub_v14',
+            cancel_at_period_end=True,
+            status='active',
+            current_period_end=None,
+            cancel_at=None,
+            items=FakeStripeItems(data=[item]),
+        )
 
         handle_subscription_updated(sub)
 
@@ -3486,15 +3500,15 @@ class TestSubscriptionUpdatedStripeV14(unittest.TestCase):
 
         from payment_server import handle_subscription_updated
 
-        sub = MagicMock()
-        sub.customer = 'cus_test'
-        sub.id = 'sub_test'
-        sub.cancel_at_period_end = True
-        sub.status = 'active'
-        sub.current_period_end = None
-        sub.cancel_at = None
-        sub.items.data = []
-        sub.get = MagicMock(side_effect=KeyError)
+        sub = FakeStripeSub(
+            customer='cus_test',
+            id='sub_test',
+            cancel_at_period_end=True,
+            status='active',
+            current_period_end=None,
+            cancel_at=None,
+            items=FakeStripeItems(data=[]),
+        )
 
         handle_subscription_updated(sub)
 
@@ -3515,13 +3529,14 @@ class TestSubscriptionUpdatedStripeV14(unittest.TestCase):
 
         from payment_server import handle_subscription_updated
 
-        sub = MagicMock()
-        sub.customer = 'cus_v14'
-        sub.id = 'sub_v14'
-        sub.cancel_at_period_end = False
-        sub.status = 'active'
-        sub.current_period_end = 1735689600
-        sub.get = MagicMock(side_effect=KeyError)
+        sub = FakeStripeSub(
+            customer='cus_v14',
+            id='sub_v14',
+            cancel_at_period_end=False,
+            status='active',
+            current_period_end=1735689600,
+            cancel_at=None,
+        )
 
         handle_subscription_updated(sub)
 
@@ -3557,7 +3572,7 @@ class TestSubscriptionUpdatedStripeV14(unittest.TestCase):
         self.assertIn("January", notify_text)
 
 
-@unittest.skipUnless(FLASK_AVAILABLE, "Flask not installed")
+
 class TestSubscriptionDeletedStripeV14(unittest.TestCase):
     """Test handle_subscription_deleted with Stripe v14 object format."""
 
@@ -3605,7 +3620,7 @@ class TestSubscriptionDeletedStripeV14(unittest.TestCase):
 # Complete lifecycle: checkout → webhook → DB → notification → gating
 # ═══════════════════════════════════════════════════════════════════════════
 
-@unittest.skipUnless(FLASK_AVAILABLE, "Flask not installed")
+
 class TestE2ECheckoutToActive(unittest.TestCase):
     """End-to-end: checkout.session.completed → subscription active → commands work."""
 
@@ -3635,7 +3650,7 @@ class TestE2ECheckoutToActive(unittest.TestCase):
         self.assertIn("Payment Successful", mock_notify.call_args[0][1])
 
 
-@unittest.skipUnless(FLASK_AVAILABLE, "Flask not installed")
+
 class TestE2ECancelViaPortal(unittest.TestCase):
     """End-to-end: user cancels via Stripe portal → webhook → pending cancel → period end → deactivated."""
 
@@ -3762,7 +3777,7 @@ class TestE2EForceCancel(unittest.TestCase):
         self.assertIn("billing period end", call_text)
 
 
-@unittest.skipUnless(FLASK_AVAILABLE, "Flask not installed")
+
 class TestE2EPaymentFailedToDeactivation(unittest.TestCase):
     """End-to-end: payment fails → warnings → final fail → deactivation."""
 
@@ -3807,7 +3822,7 @@ class TestE2EPaymentFailedToDeactivation(unittest.TestCase):
         self.assertIn("Cancelled", final_text)
 
 
-@unittest.skipUnless(FLASK_AVAILABLE, "Flask not installed")
+
 class TestE2EWebhookRouting(unittest.TestCase):
     """End-to-end: verify all webhook event types route correctly through Flask."""
 
@@ -3893,7 +3908,7 @@ class TestE2EWebhookRouting(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
 
 
-@unittest.skipUnless(FLASK_AVAILABLE, "Flask not installed")
+
 class TestE2ESuccessPageSavesStripeIds(unittest.TestCase):
     """End-to-end: payment success page retrieves session and saves Stripe IDs."""
 
@@ -4063,7 +4078,7 @@ class TestE2EPremiumGating(unittest.TestCase):
         )
 
 
-@unittest.skipUnless(FLASK_AVAILABLE, "Flask not installed")
+
 class TestE2EFullSubscriptionLifecycle(unittest.TestCase):
     """End-to-end: complete lifecycle from payment → active → cancel → deactivated → re-subscribe."""
 
@@ -4165,18 +4180,16 @@ class TestE2EFullSubscriptionLifecycle(unittest.TestCase):
             'first_name': 'V14',
         }
 
-        sub_updated = MagicMock()
-        sub_updated.customer = 'cus_v14_lifecycle'
-        sub_updated.id = 'sub_v14_lifecycle'
-        sub_updated.cancel_at_period_end = True
-        sub_updated.status = 'active'
-        sub_updated.current_period_end = None
-        sub_updated.cancel_at = None
-        sub_updated.get = MagicMock(side_effect=KeyError)
-
-        item = MagicMock()
-        item.current_period_end = 1735689600
-        sub_updated.items.data = [item]
+        item = FakeStripeSub(current_period_end=1735689600)
+        sub_updated = FakeStripeSub(
+            customer='cus_v14_lifecycle',
+            id='sub_v14_lifecycle',
+            cancel_at_period_end=True,
+            status='active',
+            current_period_end=None,
+            cancel_at=None,
+            items=FakeStripeItems(data=[item]),
+        )
 
         handle_subscription_updated(sub_updated)
 
@@ -4189,20 +4202,20 @@ class TestE2EFullSubscriptionLifecycle(unittest.TestCase):
         # Phase 3: Deletion with v14 object
         mock_db.execute_query.return_value = {'telegram_id': 88888}
 
-        sub_deleted = MagicMock()
-        sub_deleted.customer = 'cus_v14_lifecycle'
-        sub_deleted.id = 'sub_v14_lifecycle'
-        sub_deleted.get = MagicMock(side_effect=KeyError)
+        sub_deleted = FakeStripeSub(
+            customer='cus_v14_lifecycle',
+            id='sub_v14_lifecycle',
+        )
 
         handle_subscription_deleted(sub_deleted)
         mock_db.deactivate_subscription.assert_called_once_with(88888)
 
 
-@unittest.skipUnless(FLASK_AVAILABLE, "Flask not installed")
+
 class TestNotificationDelivery(unittest.TestCase):
     """Test that Telegram notifications are actually sent correctly."""
 
-    @patch('payment_server.requests.post')
+    @patch('requests.post')
     def test_notification_sends_correctly(self, mock_post):
         """send_telegram_notification should POST to Telegram API."""
         from payment_server import send_telegram_notification
@@ -4217,7 +4230,7 @@ class TestNotificationDelivery(unittest.TestCase):
         call_kwargs = mock_post.call_args
         self.assertIn('chat_id', call_kwargs[1].get('json', call_kwargs[0][0] if call_kwargs[0] else {}))
 
-    @patch('payment_server.requests.post')
+    @patch('requests.post')
     def test_notification_handles_api_failure(self, mock_post):
         """Should handle Telegram API failure without crashing."""
         from payment_server import send_telegram_notification
@@ -4230,7 +4243,7 @@ class TestNotificationDelivery(unittest.TestCase):
         # Should not raise
         send_telegram_notification(12345, "Test message")
 
-    @patch('payment_server.requests.post')
+    @patch('requests.post')
     def test_notification_handles_network_error(self, mock_post):
         """Should handle network errors without crashing."""
         from payment_server import send_telegram_notification
@@ -4241,7 +4254,7 @@ class TestNotificationDelivery(unittest.TestCase):
         send_telegram_notification(12345, "Test message")
 
 
-@unittest.skipUnless(FLASK_AVAILABLE, "Flask not installed")
+
 class TestWebhookSignatureVerification(unittest.TestCase):
     """Test webhook signature validation."""
 

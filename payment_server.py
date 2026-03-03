@@ -209,6 +209,14 @@ def stripe_webhook():
         invoice = event['data']['object']
         handle_invoice_payment_failed(invoice)
 
+    else:
+        # Unhandled events — log and acknowledge so Stripe doesn't retry.
+        # Only 4 events need handlers for our single-plan, no-trial, no-pause setup:
+        #   checkout.session.completed, customer.subscription.updated,
+        #   customer.subscription.deleted, invoice.payment_failed
+        # Remove unneeded events from Stripe Dashboard → Developers → Webhooks
+        logger.info(f"Unhandled Stripe event type: {event_type} (acknowledged)")
+
     return jsonify({'status': 'success'}), 200
 
 
@@ -278,7 +286,7 @@ def _get_subscription_period_end(subscription):
                 if period_end is None:
                     try:
                         period_end = item_list[0].get('current_period_end')
-                    except (AttributeError, TypeError):
+                    except (AttributeError, TypeError, KeyError):
                         pass
         except (AttributeError, IndexError, KeyError, TypeError):
             pass
@@ -289,7 +297,7 @@ def _get_subscription_period_end(subscription):
         if period_end is None:
             try:
                 period_end = subscription.get('cancel_at')
-            except (AttributeError, TypeError):
+            except (AttributeError, TypeError, KeyError):
                 pass
 
     return period_end
@@ -311,7 +319,7 @@ def handle_subscription_updated(subscription):
         if cancel_at is None:
             try:
                 cancel_at = subscription.get('cancel_at')
-            except (AttributeError, TypeError):
+            except (AttributeError, TypeError, KeyError):
                 pass
 
         # Determine if this is a cancellation: either cancel_at_period_end=True
