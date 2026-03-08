@@ -236,13 +236,39 @@ def handle_checkout_session_completed(session):
 
         logger.info(f"Checkout completed for user {telegram_id}: customer={customer_id}, subscription={subscription_id}")
 
+        # Get actual period end from Stripe subscription instead of hardcoded 30 days
+        days = 30  # default fallback
+        if subscription_id:
+            try:
+                sub = stripe.Subscription.retrieve(subscription_id)
+                period_end = _get_subscription_period_end(sub)
+                if period_end:
+                    from datetime import datetime as dt
+                    sub_end = dt.fromtimestamp(period_end)
+                    days = max(1, (sub_end - dt.now()).days)
+            except Exception as e:
+                logger.warning(f"Could not fetch subscription period for {subscription_id}: {e}")
+
         # Activate subscription AND save Stripe IDs
         db.activate_subscription(
             telegram_id,
             stripe_customer_id=customer_id,
             stripe_subscription_id=subscription_id,
-            days=30
+            days=days
         )
+
+        # Tag subscription type based on whether promo/trial coupon was used
+        promo_code = session.get('metadata', {}).get('promo_code', '')
+        sub_type = 'stripe_trial' if promo_code else 'stripe'
+        try:
+            db.execute_query("""
+                UPDATE users SET metadata = jsonb_set(
+                    COALESCE(metadata, '{}'::jsonb),
+                    '{subscription_type}', %s::jsonb
+                ) WHERE telegram_id = %s
+            """, (f'"{sub_type}"', telegram_id))
+        except Exception:
+            pass
 
         # Send confirmation
         send_telegram_notification(
@@ -392,20 +418,36 @@ def handle_subscription_updated(subscription):
             )
 
         elif status == 'active' and not is_cancelling:
-            # Subscription reactivated (user uncancelled)
-            logger.info(f"Subscription {subscription_id} reactivated for user {telegram_id}")
+            # Subscription reactivated or renewed — sync expiration from Stripe
+            logger.info(f"Subscription {subscription_id} active for user {telegram_id}")
 
-            db.execute_query("""
+            # Sync subscription_expires with Stripe's actual period end
+            update_query = """
                 UPDATE users
-                SET subscription_active = true
+                SET subscription_active = true,
+                    metadata = COALESCE(metadata, '{}'::jsonb) - 'cancellation_pending'
                 WHERE telegram_id = %s
-            """, (telegram_id,))
+            """
+            update_params = [telegram_id]
+
+            if current_period_end:
+                new_expires = datetime.fromtimestamp(current_period_end)
+                update_query = """
+                    UPDATE users
+                    SET subscription_active = true,
+                        subscription_expires = %s,
+                        metadata = COALESCE(metadata, '{}'::jsonb) - 'cancellation_pending'
+                    WHERE telegram_id = %s
+                """
+                update_params = [new_expires, telegram_id]
+
+            db.execute_query(update_query, tuple(update_params))
 
             send_telegram_notification(
                 telegram_id,
-                "🎉 Subscription Reactivated!\n\n"
-                "Your subscription is now active again.\n\n"
-                "Welcome back! Use /autopilot to start automating."
+                "🎉 Subscription Active!\n\n"
+                "Your subscription is now active.\n\n"
+                "Use /autopilot to start automating."
             )
 
     except Exception as e:

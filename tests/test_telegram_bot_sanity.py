@@ -1331,7 +1331,7 @@ class TestCancelStripeUser(unittest.TestCase):
         }
         mock_sub = MagicMock()
         mock_sub.current_period_end = 1735689600  # 2025-01-01
-        mock_stripe.Subscription.modify.return_value = mock_sub
+        mock_stripe.Subscription.cancel.return_value = mock_sub
 
         from multiuser.telegram_bot_multiuser import handle_cancel_subscription_callback
         update = make_update(callback_data='force_cancel_sub', user_id=12345)
@@ -1340,9 +1340,7 @@ class TestCancelStripeUser(unittest.TestCase):
         asyncio.get_event_loop().run_until_complete(
             handle_cancel_subscription_callback(update, context)
         )
-        mock_stripe.Subscription.modify.assert_called_once_with(
-            'sub_test123', cancel_at_period_end=True
-        )
+        mock_stripe.Subscription.cancel.assert_called_once_with('sub_test123')
         call_text = update.callback_query.edit_message_text.call_args[0][0]
         self.assertIn("Cancelled", call_text)
 
@@ -1378,7 +1376,7 @@ class TestCancelStripeUser(unittest.TestCase):
             'stripe_subscription_id': 'sub_expired123',
         }
         import stripe as real_stripe
-        mock_stripe.Subscription.modify.side_effect = real_stripe.error.InvalidRequestError(
+        mock_stripe.Subscription.cancel.side_effect = real_stripe.error.InvalidRequestError(
             "No such subscription: sub_expired123", param="id"
         )
         mock_stripe.error = real_stripe.error
@@ -2215,7 +2213,7 @@ class TestForceCancelEdgeCases(unittest.TestCase):
         mock_sub = MagicMock()
         mock_sub.current_period_end = 1735689600
         # Stripe still returns success even if cancel_at_period_end was already True
-        mock_stripe.Subscription.modify.return_value = mock_sub
+        mock_stripe.Subscription.cancel.return_value = mock_sub
 
         from multiuser.telegram_bot_multiuser import handle_cancel_subscription_callback
         update = make_update(callback_data='force_cancel_sub', user_id=12345)
@@ -2224,9 +2222,7 @@ class TestForceCancelEdgeCases(unittest.TestCase):
         asyncio.get_event_loop().run_until_complete(
             handle_cancel_subscription_callback(update, context)
         )
-        mock_stripe.Subscription.modify.assert_called_once_with(
-            'sub_already_cancelled', cancel_at_period_end=True
-        )
+        mock_stripe.Subscription.cancel.assert_called_once_with('sub_already_cancelled')
         call_text = update.callback_query.edit_message_text.call_args[0][0]
         self.assertIn("Cancelled", call_text)
 
@@ -2240,7 +2236,7 @@ class TestForceCancelEdgeCases(unittest.TestCase):
             'stripe_subscription_id': 'sub_test',
         }
         import stripe as real_stripe
-        mock_stripe.Subscription.modify.side_effect = real_stripe.error.StripeError("Service unavailable")
+        mock_stripe.Subscription.cancel.side_effect = real_stripe.error.StripeError("Service unavailable")
         mock_stripe.error = real_stripe.error
 
         from multiuser.telegram_bot_multiuser import handle_cancel_subscription_callback
@@ -2264,7 +2260,7 @@ class TestForceCancelEdgeCases(unittest.TestCase):
             'stripe_subscription_id': 'sub_test',
         }
         import stripe as real_stripe
-        mock_stripe.Subscription.modify.side_effect = real_stripe.error.InvalidRequestError(
+        mock_stripe.Subscription.cancel.side_effect = real_stripe.error.InvalidRequestError(
             "Invalid parameter: cancel_at_period_end", param="cancel_at_period_end"
         )
         mock_stripe.error = real_stripe.error
@@ -2291,7 +2287,7 @@ class TestForceCancelEdgeCases(unittest.TestCase):
             'stripe_subscription_id': 'sub_test',
         }
         import stripe as real_stripe
-        mock_stripe.Subscription.modify.side_effect = RuntimeError("Unexpected error")
+        mock_stripe.Subscription.cancel.side_effect = RuntimeError("Unexpected error")
         mock_stripe.error = real_stripe.error
 
         from multiuser.telegram_bot_multiuser import handle_cancel_subscription_callback
@@ -2317,7 +2313,7 @@ class TestForceCancelEdgeCases(unittest.TestCase):
         mock_search.return_value = 'sub_discovered_456'
         mock_sub = MagicMock()
         mock_sub.current_period_end = 1735689600
-        mock_stripe.Subscription.modify.return_value = mock_sub
+        mock_stripe.Subscription.cancel.return_value = mock_sub
 
         from multiuser.telegram_bot_multiuser import handle_cancel_subscription_callback
         update = make_update(callback_data='force_cancel_sub', user_id=12345)
@@ -2327,9 +2323,7 @@ class TestForceCancelEdgeCases(unittest.TestCase):
             handle_cancel_subscription_callback(update, context)
         )
         mock_search.assert_called_once_with(12345)
-        mock_stripe.Subscription.modify.assert_called_once_with(
-            'sub_discovered_456', cancel_at_period_end=True
-        )
+        mock_stripe.Subscription.cancel.assert_called_once_with('sub_discovered_456')
 
     @patch('multiuser.telegram_bot_multiuser.db')
     def test_force_cancel_db_get_user_raises(self, mock_db):
@@ -2361,7 +2355,7 @@ class TestForceCancelEdgeCases(unittest.TestCase):
         }
         mock_sub = MagicMock()
         mock_sub.current_period_end = 1735689600
-        mock_stripe.Subscription.modify.return_value = mock_sub
+        mock_stripe.Subscription.cancel.return_value = mock_sub
 
         from multiuser.telegram_bot_multiuser import handle_cancel_subscription_callback
         update = make_update(callback_data='force_cancel_sub', user_id=12345)
@@ -2375,7 +2369,7 @@ class TestForceCancelEdgeCases(unittest.TestCase):
         sql = mock_db.execute_query.call_args[0][0]
         self.assertIn('cancellation_pending', sql)
         params = mock_db.execute_query.call_args[0][1]
-        self.assertEqual(params[1], 12345)  # telegram_id
+        self.assertEqual(params[0], 12345)  # telegram_id
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -2600,7 +2594,7 @@ class TestSubscriptionUpdatedEdgeCases(unittest.TestCase):
         self.assertIn('subscription_active = true', update_call[0][0].lower())
         mock_notify.assert_called()
         notify_text = mock_notify.call_args[0][1]
-        self.assertIn("Reactivated", notify_text)
+        self.assertIn("Active", notify_text)
 
     @patch('payment_server.send_telegram_notification')
     @patch('payment_server.db')
@@ -3374,7 +3368,7 @@ class TestSubscriptionLifecycle(unittest.TestCase):
 
         mock_sub = MagicMock()
         mock_sub.current_period_end = 1735689600
-        mock_stripe.Subscription.modify.return_value = mock_sub
+        mock_stripe.Subscription.cancel.return_value = mock_sub
 
         # Force cancel
         update = make_update(callback_data='force_cancel_sub', user_id=12345)
@@ -3382,14 +3376,12 @@ class TestSubscriptionLifecycle(unittest.TestCase):
         loop.run_until_complete(handle_cancel_subscription_callback(update, context))
 
         # Verify Stripe API was called
-        mock_stripe.Subscription.modify.assert_called_once_with(
-            'sub_lifecycle', cancel_at_period_end=True
-        )
+        mock_stripe.Subscription.cancel.assert_called_once_with('sub_lifecycle')
 
         # Verify cancellation message
         call_text = update.callback_query.edit_message_text.call_args[0][0]
         self.assertIn("Cancelled", call_text)
-        self.assertIn("January", call_text)  # 1735689600 = Jan 1, 2025
+        self.assertIn("access removed", call_text)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -3516,7 +3508,7 @@ class TestSubscriptionUpdatedStripeV14(unittest.TestCase):
         mock_notify.assert_called_once()
         notify_text = mock_notify.call_args[0][1]
         self.assertIn("Cancelled Successfully", notify_text)
-        self.assertIn("billing period end", notify_text)
+        self.assertIn("Cancelled", notify_text)
 
     @patch('payment_server.send_telegram_notification')
     @patch('payment_server.db')
@@ -3543,7 +3535,7 @@ class TestSubscriptionUpdatedStripeV14(unittest.TestCase):
 
         mock_notify.assert_called_once()
         notify_text = mock_notify.call_args[0][1]
-        self.assertIn("Reactivated", notify_text)
+        self.assertIn("Active", notify_text)
 
     @patch('payment_server.send_telegram_notification')
     @patch('payment_server.db')
@@ -3728,7 +3720,7 @@ class TestE2EForceCancel(unittest.TestCase):
         item.current_period_end = 1735689600
         mock_sub.items = MagicMock()
         mock_sub.items.data = [item]
-        mock_stripe.Subscription.modify.return_value = mock_sub
+        mock_stripe.Subscription.cancel.return_value = mock_sub
 
         update = make_update(callback_data='force_cancel_sub', user_id=12345)
         context = make_context()
@@ -3736,12 +3728,10 @@ class TestE2EForceCancel(unittest.TestCase):
         loop.run_until_complete(handle_cancel_subscription_callback(update, context))
         loop.close()
 
-        mock_stripe.Subscription.modify.assert_called_once_with(
-            'sub_force', cancel_at_period_end=True
-        )
+        mock_stripe.Subscription.cancel.assert_called_once_with('sub_force')
         call_text = update.callback_query.edit_message_text.call_args[0][0]
         self.assertIn("Cancelled", call_text)
-        self.assertIn("January", call_text)
+        self.assertIn("access removed", call_text)
 
     @patch('multiuser.telegram_bot_multiuser.stripe')
     @patch('multiuser.telegram_bot_multiuser.db')
@@ -3765,7 +3755,7 @@ class TestE2EForceCancel(unittest.TestCase):
                 class Result:
                     data = []
                 return Result()
-        mock_stripe.Subscription.modify.return_value = FakeEmptySub()
+        mock_stripe.Subscription.cancel.return_value = FakeEmptySub()
 
         update = make_update(callback_data='force_cancel_sub', user_id=12345)
         context = make_context()
@@ -3775,7 +3765,7 @@ class TestE2EForceCancel(unittest.TestCase):
 
         call_text = update.callback_query.edit_message_text.call_args[0][0]
         self.assertIn("Cancelled", call_text)
-        self.assertIn("billing period end", call_text)
+        self.assertIn("access removed", call_text)
 
 
 

@@ -888,6 +888,16 @@ async def handle_promo_code_input(update: Update, context: ContextTypes.DEFAULT_
         # Completely bypass payment - activate subscription directly
         db.use_promo_code(promo_code)
         if db.activate_subscription(telegram_id, days=30):
+            # Tag as promo user in metadata (no Stripe subscription)
+            try:
+                db.execute_query("""
+                    UPDATE users SET metadata = jsonb_set(
+                        COALESCE(metadata, '{}'::jsonb),
+                        '{subscription_type}', '"free_promo"'::jsonb
+                    ) WHERE telegram_id = %s
+                """, (telegram_id,))
+            except Exception:
+                pass
             await update.message.reply_text(
                 "🎉 FREE Code Activated!\n\n"
                 "✅ Your subscription is now ACTIVE for 30 days!\n"
@@ -2855,21 +2865,40 @@ async def cancel_subscription_command(update: Update, context: ContextTypes.DEFA
         )
         return
 
-    keyboard = [
-        [InlineKeyboardButton("Yes, cancel my subscription", callback_data='confirm_cancel_sub')],
-        [InlineKeyboardButton("Keep my subscription", callback_data='keep_sub')],
-    ]
+    # Determine subscription type for appropriate messaging
+    stripe_customer_id = user_data.get('stripe_customer_id') if user_data else None
+    stripe_subscription_id = user_data.get('stripe_subscription_id') if user_data else None
+    is_promo_user = not stripe_customer_id and not stripe_subscription_id
 
-    await update.message.reply_text(
-        "Are you sure you want to cancel your subscription?\n\n"
-        "You will lose access to:\n"
-        "- AI-generated posts\n"
-        "- Smart feed engagement\n"
-        "- Automated networking\n"
-        "- Analytics dashboard\n\n"
-        "Your subscription will remain active until the end of your current billing period.",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    if is_promo_user:
+        # FREE/promo user — no Stripe billing, immediate deactivation
+        keyboard = [
+            [InlineKeyboardButton("Yes, deactivate my access", callback_data='confirm_cancel_sub')],
+            [InlineKeyboardButton("Keep my access", callback_data='keep_sub')],
+        ]
+        expires = user_data.get('subscription_expires', '') if user_data else ''
+        expires_str = expires.strftime('%B %d, %Y') if expires else 'N/A'
+        await update.message.reply_text(
+            "You are on a free/promo plan (no Stripe billing).\n\n"
+            f"Access expires: {expires_str}\n\n"
+            "Would you like to deactivate your access now?",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    else:
+        keyboard = [
+            [InlineKeyboardButton("Yes, cancel my subscription", callback_data='confirm_cancel_sub')],
+            [InlineKeyboardButton("Keep my subscription", callback_data='keep_sub')],
+        ]
+        await update.message.reply_text(
+            "Are you sure you want to cancel your subscription?\n\n"
+            "You will lose access to:\n"
+            "- AI-generated posts\n"
+            "- Smart feed engagement\n"
+            "- Automated networking\n"
+            "- Analytics dashboard\n\n"
+            "Your subscription will remain active until the end of your current billing period.",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
 
 
 async def handle_cancel_subscription_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3035,67 +3064,27 @@ async def handle_cancel_subscription_callback(update: Update, context: ContextTy
             return
 
         try:
-            subscription = stripe.Subscription.modify(
-                stripe_subscription_id,
-                cancel_at_period_end=True
-            )
+            # Cancel immediately on Stripe (not at period end) — deactivate access now
+            stripe.Subscription.cancel(stripe_subscription_id)
 
-            # Get period end — handle both old API (subscription.current_period_end)
-            # and new API 2025-03-31+ (subscription.items is a method, cancel_at field)
-            period_end = getattr(subscription, 'current_period_end', None)
-            if period_end is None:
-                try:
-                    items = getattr(subscription, 'items', None)
-                    if callable(items):
-                        items_result = items()
-                        item_list = getattr(items_result, 'data', []) if items_result else []
-                    elif items and hasattr(items, 'data'):
-                        item_list = items.data
-                    else:
-                        item_list = []
-                    if item_list:
-                        period_end = getattr(item_list[0], 'current_period_end', None)
-                except (AttributeError, IndexError, TypeError):
-                    pass
-            if period_end is None:
-                period_end = getattr(subscription, 'cancel_at', None)
-
-            if period_end:
-                cancel_date = datetime.fromtimestamp(period_end)
-                cancel_date_str = cancel_date.strftime('%B %d, %Y')
-            else:
-                cancel_date = None
-                cancel_date_str = "your billing period end"
-
-            if cancel_date:
-                db.execute_query("""
-                    UPDATE users
-                    SET subscription_expires = %s,
-                        metadata = jsonb_set(
-                            COALESCE(metadata, '{}'::jsonb),
-                            '{cancellation_pending}',
-                            'true'::jsonb
-                        )
-                    WHERE telegram_id = %s
-                """, (cancel_date, telegram_id,))
-            else:
-                db.execute_query("""
-                    UPDATE users
-                    SET metadata = jsonb_set(
-                            COALESCE(metadata, '{}'::jsonb),
-                            '{cancellation_pending}',
-                            'true'::jsonb
-                        )
-                    WHERE telegram_id = %s
-                """, (telegram_id,))
+            # Deactivate in DB immediately — don't rely on webhook
+            db.deactivate_subscription(telegram_id)
+            db.execute_query("""
+                UPDATE users
+                SET metadata = jsonb_set(
+                    COALESCE(metadata, '{}'::jsonb),
+                    '{cancellation_pending}',
+                    'false'::jsonb
+                )
+                WHERE telegram_id = %s
+            """, (telegram_id,))
 
             await query.edit_message_text(
-                f"✅ Subscription Cancelled\n\n"
-                f"Your Stripe subscription has been cancelled.\n\n"
-                f"Access continues until: {cancel_date_str}\n\n"
-                f"You won't be charged again.\n\n"
-                f"Changed your mind? Resubscribe anytime with /start\n\n"
-                f"Thank you for using LinkedInGrowthBot!"
+                "✅ Subscription Cancelled\n\n"
+                "Your Stripe subscription has been cancelled and access removed.\n\n"
+                "You won't be charged again.\n\n"
+                "Resubscribe anytime with /start\n\n"
+                "Thank you for using LinkedInGrowthBot!"
             )
 
         except stripe.error.InvalidRequestError as e:
