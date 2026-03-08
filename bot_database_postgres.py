@@ -431,6 +431,15 @@ class BotDatabase:
             'last_active': None
         }
 
+    def get_daily_action_count(self, telegram_id: int, action_type: str) -> int:
+        """Get total action count for a user for today from automation_stats."""
+        result = self.execute_query("""
+            SELECT COALESCE(SUM(action_count), 0) as total
+            FROM automation_stats
+            WHERE telegram_id = %s AND action_type = %s AND performed_at >= CURRENT_DATE
+        """, (telegram_id, action_type), fetch='one')
+        return int(result['total']) if result else 0
+
     # =========================================================================
     # PROMO CODES
     # =========================================================================

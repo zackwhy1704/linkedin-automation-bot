@@ -76,6 +76,7 @@ logger = logging.getLogger(__name__)
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 STRIPE_SECRET_KEY = os.getenv('STRIPE_SECRET_KEY')
 STRIPE_PRICE_ID = os.getenv('STRIPE_PRICE_ID')  # Your subscription price ID from Stripe
+STRIPE_FREETRIAL_COUPON_ID = os.getenv('STRIPE_FREETRIAL_COUPON_ID', 'rHzJAvUc')  # 100% off first month coupon
 ENCRYPTION_KEY = os.getenv('ENCRYPTION_KEY') or Fernet.generate_key()
 PAYMENT_SERVER_URL = os.getenv('PAYMENT_SERVER_URL', 'http://localhost:5000')
 WEBAPP_URL = os.getenv('WEBAPP_URL', 'http://localhost:8080')  # WebApp hosting URL
@@ -103,6 +104,51 @@ SUPPORTED_IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif'}
 SUPPORTED_VIDEO_EXTENSIONS = {'.mp4', '.mov'}
 SUPPORTED_MEDIA_EXTENSIONS = SUPPORTED_IMAGE_EXTENSIONS | SUPPORTED_VIDEO_EXTENSIONS
 MAX_MEDIA_SIZE_MB = 10
+
+# Daily activity limits (LinkedIn TOS safety)
+DAILY_LIMITS = {
+    'post': 3,           # LinkedIn recommends 1-2, cap at 3
+    'comment': 20,       # Conservative for LinkedIn TOS
+    'like': 50,          # Standard safe daily limit
+    'connection': 20,    # Conservative for LinkedIn TOS
+}
+DAILY_LIMIT_MESSAGE = (
+    "Maximum activity reached for the day, anymore will be flagged "
+    "out by LinkedIn TOS algorithm, please continue tomorrow."
+)
+
+
+def check_daily_limits(telegram_id: int, action_types: list) -> dict:
+    """Check if user has exceeded daily limits for given action types.
+    Returns {'exceeded': [action_types at limit], 'counts': {type: (current, limit)}}"""
+    exceeded = []
+    counts = {}
+    for action_type in action_types:
+        limit = DAILY_LIMITS.get(action_type)
+        if limit is None:
+            continue
+        current = db.get_daily_action_count(telegram_id, action_type)
+        counts[action_type] = (current, limit)
+        if current >= limit:
+            exceeded.append(action_type)
+    return {'exceeded': exceeded, 'counts': counts}
+
+
+def format_limit_message(limit_result: dict) -> str:
+    """Format user-facing message showing which limits are exceeded and remaining quotas."""
+    action_labels = {
+        'post': 'Posts',
+        'like': 'Likes',
+        'comment': 'Comments',
+        'connection': 'Connection requests',
+    }
+    lines = [DAILY_LIMIT_MESSAGE, "", "Today's usage:"]
+    for action_type, (current, limit) in limit_result['counts'].items():
+        label = action_labels.get(action_type, action_type)
+        remaining = max(0, limit - current)
+        tag = " [LIMIT REACHED]" if current >= limit else ""
+        lines.append(f"  {label}: {current}/{limit} (remaining: {remaining}){tag}")
+    return "\n".join(lines)
 
 
 def encrypt_password(password: str) -> bytes:
@@ -307,8 +353,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         f"Schedule posts, engage authentically with comments and likes, "
         f"send personalized messages, and grow your network—all on autopilot.\n\n"
         f"Stay active, build relationships, and generate leads 24/7 without lifting a finger. 💼\n\n"
+        f"💡 Developer advice: We recommend testing with a secondary LinkedIn account first "
+        f"to evaluate the bot's effectiveness before using your main account.\n\n"
         f"Let's set up your profile!\n\n"
-        f"First, what's your industry? (e.g., software development, marketing, sales)"
+        f"⚠️ Note: Please ensure accuracy in your inputs (spelling, relevance) "
+        f"as they directly shape the AI-generated content on your LinkedIn profile.\n\n"
+        f"First, what's your industry? (e.g., software development, marketing, sales)\n\n"
+        f"Type /cancel at any time to exit setup."
     )
 
     return PROFILE_INDUSTRY
@@ -338,7 +389,8 @@ async def profile_industry(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     await update.message.reply_text(
         "Great! Now, what are your key skills? (comma-separated)\n"
-        "Example: Python, automation, AI, web development"
+        "Example: Python, automation, AI, web development\n\n"
+        "Type /cancel to exit setup."
     )
     return PROFILE_SKILLS
 
@@ -367,7 +419,8 @@ async def profile_skills(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     await update.message.reply_text(
         "Perfect! What are your career goals?\n"
-        "Example: senior developer role, technical sales, business development"
+        "Example: senior developer role, technical sales, business development\n\n"
+        "Type /cancel to exit setup."
     )
     return PROFILE_GOALS
 
@@ -435,7 +488,8 @@ async def profile_tone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     if query.data == 'tone_custom':
         await query.edit_message_text(
             "✏️ Enter your custom tone description:\n\n"
-            "Example: witty and humorous, inspiring and motivational, data-driven analyst, etc."
+            "Example: witty and humorous, inspiring and motivational, data-driven analyst, etc.\n\n"
+            "Type /cancel to exit setup."
         )
         return CUSTOM_TONE
 
@@ -451,7 +505,8 @@ async def profile_tone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         await query.edit_message_text(
             f"Tones selected: {tones_text} ✅\n\n"
             f"Great! Now let's connect your LinkedIn account.\n\n"
-            f"Please enter your LinkedIn email address:"
+            f"Please enter your LinkedIn email address:\n\n"
+            f"Type /cancel to exit setup."
         )
         return LINKEDIN_EMAIL
 
@@ -528,7 +583,8 @@ async def custom_tone_input(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         f"Custom tone added: {custom_tone} ✅\n\n"
         f"All selected tones: {tones_text}\n\n"
         f"Great! Now let's connect your LinkedIn account.\n\n"
-        f"Please enter your LinkedIn email address:"
+        f"Please enter your LinkedIn email address:\n\n"
+        f"Type /cancel to exit setup."
     )
     return LINKEDIN_EMAIL
 
@@ -590,7 +646,8 @@ async def optimal_times(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             "Example:\n"
             "- position as a builder who ships real products\n"
             "- share authentic behind-the-scenes stories\n"
-            "- attract recruiters and collaborators"
+            "- attract recruiters and collaborators\n\n"
+            "Type /cancel to exit setup."
         )
     else:
         # User entered custom times — validate HH:MM format
@@ -614,7 +671,8 @@ async def optimal_times(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             "Example:\n"
             "- position as a builder who ships real products\n"
             "- share authentic behind-the-scenes stories\n"
-            "- attract recruiters and collaborators"
+            "- attract recruiters and collaborators\n\n"
+            "Type /cancel to exit setup."
         )
 
     return CONTENT_GOALS
@@ -687,13 +745,13 @@ async def content_goals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
     # Show subscription options
     keyboard = [
-        [InlineKeyboardButton("💳 Subscribe for $0.99/day", callback_data='subscribe_daily')],
+        [InlineKeyboardButton("💳 Subscribe for $29.99/month", callback_data='subscribe_daily')],
         [InlineKeyboardButton("🎁 I have a promo code", callback_data='promo_code')],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await update.message.reply_text(
-        "💎 Premium Access - Just $0.99/day\n\n"
+        "💎 Premium Access - $29.99/month\n\n"
         "Get unlimited access to:\n"
         "✓ AI-generated posts (unlimited)\n"
         "✓ Smart feed engagement (likes + comments)\n"
@@ -703,9 +761,8 @@ async def content_goals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         "✓ 24/7 automation on autopilot\n"
         "✓ Priority support\n\n"
         "💰 Pricing:\n"
-        "• $0.99 charged daily (cancel anytime)\n"
-        "• Less than a cup of coffee!\n"
-        "• ~$30/month only if you keep it\n\n"
+        "• $29.99/month (cancel anytime)\n"
+        "• Less than $1/day!\n\n"
         "💳 Payment: All major credit cards accepted\n"
         "🔒 Secure: Powered by Stripe\n\n"
         "Choose an option:",
@@ -737,7 +794,8 @@ async def linkedin_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     await update.message.reply_text(
         "Great! Now enter your LinkedIn password:\n"
-        "(Encrypted and safely stored in your device, not accessible by anyone but you)"
+        "(Encrypted and safely stored in your device, not accessible by anyone but you)\n\n"
+        "Type /cancel to exit setup."
     )
     return LINKEDIN_PASSWORD
 
@@ -791,7 +849,8 @@ async def linkedin_password(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             "Example:\n"
             "- building AI agents and lessons learned\n"
             "- automating business workflows\n"
-            "- the future of work with AI"
+            "- the future of work with AI\n\n"
+            "Type /cancel to exit setup."
         )
     )
     return CONTENT_THEMES
@@ -814,9 +873,13 @@ async def handle_promo_code_input(update: Update, context: ContextTypes.DEFAULT_
         return PAYMENT_PROCESSING
 
     if not result:
+        keyboard = [
+            [InlineKeyboardButton("💳 Subscribe for $29.99/month", callback_data='subscribe_daily')],
+        ]
         await update.message.reply_text(
             "❌ Invalid promo code. The code may be expired, fully used, or doesn't exist.\n\n"
-            "Please enter a valid promo code or skip to payment."
+            "Try another code or tap below to subscribe:",
+            reply_markup=InlineKeyboardMarkup(keyboard)
         )
         return PAYMENT_PROCESSING
 
@@ -844,7 +907,7 @@ async def handle_promo_code_input(update: Update, context: ContextTypes.DEFAULT_
             return PAYMENT_PROCESSING
 
     if result.get('is_freetrial'):
-        # FREE TRIAL - Create Stripe checkout with 7-day trial period
+        # FREE TRIAL - Create Stripe checkout with 100% off first month coupon
         try:
             session = stripe.checkout.Session.create(
                 payment_method_types=['card'],
@@ -853,9 +916,9 @@ async def handle_promo_code_input(update: Update, context: ContextTypes.DEFAULT_
                     'quantity': 1,
                 }],
                 mode='subscription',
-                subscription_data={
-                    'trial_period_days': 7,  # 7-day free trial before first charge
-                },
+                discounts=[{
+                    'coupon': STRIPE_FREETRIAL_COUPON_ID,
+                }],
                 success_url=f'{PAYMENT_SERVER_URL}/payment/success?bot={context.bot.username}&session_id={{CHECKOUT_SESSION_ID}}',
                 cancel_url=f'{PAYMENT_SERVER_URL}/payment/cancel?bot={context.bot.username}',
                 client_reference_id=str(telegram_id),
@@ -874,19 +937,19 @@ async def handle_promo_code_input(update: Update, context: ContextTypes.DEFAULT_
             # Mark promo code as used
             db.use_promo_code(promo_code)
 
-            keyboard = [[InlineKeyboardButton("Start 7-Day FREE Trial 🎁", url=session.url)]]
+            keyboard = [[InlineKeyboardButton("Start FREE Month 🎁", url=session.url)]]
             reply_markup = InlineKeyboardMarkup(keyboard)
 
             await update.message.reply_text(
                 f"🎉 {promo_code} Activated!\n\n"
-                f"✅ You get a 7-DAY FREE TRIAL!\n\n"
+                f"✅ Your first month is completely FREE!\n\n"
                 f"How it works:\n"
                 f"1️⃣ Enter your card (secure with Stripe)\n"
                 f"2️⃣ You pay $0.00 today\n"
-                f"3️⃣ Get full access for 7 days\n"
-                f"4️⃣ After 7 days → auto-charged $0.99/day\n"
-                f"5️⃣ Cancel anytime (even during trial)\n\n"
-                f"💳 Click below to start your FREE trial:",
+                f"3️⃣ Get full access for 1 month\n"
+                f"4️⃣ After 1 month → $29.99/month\n"
+                f"5️⃣ Cancel anytime (even during free month)\n\n"
+                f"💳 Click below to start your FREE month:",
                 reply_markup=reply_markup
             )
 
@@ -904,9 +967,9 @@ async def handle_promo_code_input(update: Update, context: ContextTypes.DEFAULT_
             return PAYMENT_PROCESSING
 
     else:
-        # Partial discount - not implemented for daily billing
+        # Partial discount - not implemented for monthly billing
         await update.message.reply_text(
-            f"⚠️ Partial discounts not available for daily billing.\n"
+            f"⚠️ Partial discounts are not currently available.\n"
             f"Please use a free trial code or subscribe normally."
         )
         return PAYMENT_PROCESSING
@@ -947,23 +1010,21 @@ async def handle_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE
                     'request_three_d_secure': 'automatic',  # 3D Secure for security
                 }
             },
-            # Allow promo codes at checkout
-            allow_promotion_codes=True,
             # Collect billing address
             billing_address_collection='auto',
         )
 
-        keyboard = [[InlineKeyboardButton("Subscribe Now - $0.99/day 💳", url=session.url)]]
+        keyboard = [[InlineKeyboardButton("Subscribe Now - $29.99/month 💳", url=session.url)]]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         await query.edit_message_text(
-            "💳 Daily Subscription - $0.99/day\n\n"
+            "💳 Monthly Subscription - $29.99/month\n\n"
             "We accept all major credit cards:\n"
             "✓ Visa\n"
             "✓ Mastercard\n"
             "✓ American Express\n"
             "✓ Discover\n\n"
-            "💰 You'll be charged $0.99 every day\n"
+            "💰 You'll be charged $29.99 every month\n"
             "📅 Cancel anytime (no questions asked)\n"
             "🔒 Secure payment powered by Stripe\n\n"
             "Click below to subscribe:",
@@ -1029,6 +1090,15 @@ async def autopilot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Failed to verify your LinkedIn credentials. Please try again in a moment."
         )
         return
+
+    # Check daily limits (autopilot does: post + likes + connections)
+    try:
+        limit_result = check_daily_limits(telegram_id, ['post', 'like', 'connection'])
+        if limit_result['exceeded']:
+            await update.message.reply_text(format_limit_message(limit_result))
+            return
+    except Exception as e:
+        logger.error(f"Failed to check daily limits for user {telegram_id}: {e}")
 
     await update.message.reply_text(
         "🚀 *Autopilot Initiated!*\n\n"
@@ -1222,6 +1292,15 @@ async def engage_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Failed to verify your LinkedIn credentials. Please try again.")
         return
 
+    # Check daily limits for engagement
+    try:
+        limit_result = check_daily_limits(telegram_id, ['like', 'comment'])
+        if limit_result['exceeded']:
+            await update.message.reply_text(format_limit_message(limit_result))
+            return
+    except Exception as e:
+        logger.error(f"Failed to check daily limits for user {telegram_id}: {e}")
+
     # Show engagement options
     keyboard = [
         [InlineKeyboardButton("💬 Reply to Comments on My Posts", callback_data='engage_replies')],
@@ -1257,6 +1336,15 @@ async def handle_engage_callback(update: Update, context: ContextTypes.DEFAULT_T
         return
 
     if query.data == 'engage_replies':
+        # Check comment limit
+        try:
+            limit_result = check_daily_limits(telegram_id, ['comment'])
+            if limit_result['exceeded']:
+                await query.edit_message_text(format_limit_message(limit_result))
+                return
+        except Exception as e:
+            logger.error(f"Failed to check daily limits for user {telegram_id}: {e}")
+
         await query.edit_message_text(
             "💬 *Reply Engagement Activated!*\n\n"
             "🤖 *What's happening:*\n"
@@ -1285,6 +1373,15 @@ async def handle_engage_callback(update: Update, context: ContextTypes.DEFAULT_T
             )
 
     elif query.data == 'engage_feed':
+        # Check like/comment limits
+        try:
+            limit_result = check_daily_limits(telegram_id, ['like', 'comment'])
+            if limit_result['exceeded']:
+                await query.edit_message_text(format_limit_message(limit_result))
+                return
+        except Exception as e:
+            logger.error(f"Failed to check daily limits for user {telegram_id}: {e}")
+
         await query.edit_message_text(
             "👍 *Feed Engagement Started!*\n\n"
             "🤖 *What's happening:*\n"
@@ -1493,6 +1590,15 @@ async def connect_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Failed to verify your LinkedIn credentials. Please try again.")
         return
 
+    # Check daily limit for connection requests
+    try:
+        limit_result = check_daily_limits(telegram_id, ['connection'])
+        if limit_result['exceeded']:
+            await update.message.reply_text(format_limit_message(limit_result))
+            return
+    except Exception as e:
+        logger.error(f"Failed to check daily limits for user {telegram_id}: {e}")
+
     await update.message.reply_text(
         "🤝 *Connection Builder Activated!*\n\n"
         "🤖 *What's happening:*\n"
@@ -1609,6 +1715,15 @@ async def schedule_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Failed to check subscription for user {telegram_id}: {e}")
         await update.message.reply_text("Failed to verify your subscription. Please try again.")
         return
+
+    # Check daily limit for posts (scheduled posts count toward daily limit)
+    try:
+        limit_result = check_daily_limits(telegram_id, ['post'])
+        if limit_result['exceeded']:
+            await update.message.reply_text(format_limit_message(limit_result))
+            return
+    except Exception as e:
+        logger.error(f"Failed to check daily limits for user {telegram_id}: {e}")
 
     # Get user's posting times from profile
     try:
@@ -1753,6 +1868,8 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
     await query.answer()
 
     if query.data == 'cancel_settings':
+        context.user_data.pop('updating_field', None)
+        context.user_data.pop('linkedin_email_temp', None)
         await query.edit_message_text("Settings menu closed.")
         return
 
@@ -1770,7 +1887,11 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
     # Store what we're updating in context
     context.user_data['updating_field'] = query.data
 
-    await query.edit_message_text(prompts.get(query.data, "Enter new value:"))
+    keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data='cancel_settings')]]
+    await query.edit_message_text(
+        prompts.get(query.data, "Enter new value:") + "\n\nOr tap Cancel to go back.",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
 
 async def handle_settings_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1898,6 +2019,15 @@ async def post_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Failed to check subscription for user {telegram_id}: {e}")
         await update.message.reply_text("Failed to verify your subscription. Please try again.")
         return
+
+    # Check daily limit for posts
+    try:
+        limit_result = check_daily_limits(telegram_id, ['post'])
+        if limit_result['exceeded']:
+            await update.message.reply_text(format_limit_message(limit_result))
+            return
+    except Exception as e:
+        logger.error(f"Failed to check daily limits for user {telegram_id}: {e}")
 
     keyboard = [
         [InlineKeyboardButton("🤖 Generate AI Post", callback_data='post_ai_generate')],
@@ -2431,6 +2561,7 @@ async def handle_post_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 
     if query.data == 'post_write_own':
         context.user_data['awaiting_custom_post'] = True
+        keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data='post_discard')]]
         await query.edit_message_text(
             "✏️ *Write Your Post*\n\n"
             "Type your LinkedIn post and send it:\n\n"
@@ -2439,6 +2570,7 @@ async def handle_post_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             "• Use line breaks for readability\n"
             "• Add hashtags at the end\n\n"
             "Type your post now:",
+            reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode='Markdown'
         )
         return
@@ -2462,13 +2594,40 @@ async def handle_post_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         context.user_data.pop('awaiting_post_media', None)
         return
 
+    if query.data == 'post_back_preview':
+        # Return to post preview from media upload or other sub-screen
+        context.user_data['awaiting_post_media'] = False
+        context.user_data['awaiting_custom_post'] = False
+        telegram_id = update.effective_user.id
+        generated_post = context.user_data.get('generated_post', '')
+        if not generated_post:
+            await query.edit_message_text("No post found. Use /post to start again.")
+            return
+        keyboard = _build_post_preview_keyboard(telegram_id, context, is_ai=True)
+        media_line = _media_status_line(context)
+        await query.edit_message_text(
+            f"📝 *Post Preview:*\n\n"
+            f"{'─' * 40}\n\n"
+            f"{generated_post}\n\n"
+            f"{'─' * 40}\n"
+            f"{media_line}\n"
+            f"Choose how to post:\n"
+            f"📱 *Mobile*: Opens on your phone (recommended)\n"
+            f"🖥️ *Browser*: Opens on server (visible automation)",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+        return
+
     if query.data == 'post_attach_media':
         context.user_data['awaiting_post_media'] = True
+        keyboard = [[InlineKeyboardButton("🔙 Back to preview", callback_data='post_back_preview')]]
         await query.edit_message_text(
             "📷 *Attach Media to Your Post*\n\n"
             "Send a photo or file to attach.\n\n"
             "Supported formats: JPG, PNG, GIF, MP4, MOV\n"
             f"Max size: {MAX_MEDIA_SIZE_MB}MB",
+            reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode='Markdown'
         )
         return
@@ -2508,7 +2667,7 @@ async def handle_post_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         keyboard = [
             [InlineKeyboardButton("🔗 Open LinkedIn Feed", url="https://www.linkedin.com/feed/")],
             [InlineKeyboardButton("✅ I Posted It!", callback_data='post_confirmed')],
-            [InlineKeyboardButton("🔙 Back", callback_data='post_discard')],
+            [InlineKeyboardButton("🔙 Back to preview", callback_data='post_back_preview')],
         ]
         await query.edit_message_text(
             "📱 *Post on Mobile — 3 Easy Steps:*\n\n"

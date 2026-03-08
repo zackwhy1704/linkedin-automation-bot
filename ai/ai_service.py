@@ -31,7 +31,7 @@ class AIService:
         # Load configuration
         self.config = self._load_config(config_file)
         self.ai_config = self.config.get('ai_config', {})
-        self.model = self.ai_config.get('model', 'claude-opus-4-6')
+        self.model = self.ai_config.get('model', 'claude-haiku-4-5-20251001')
         self.temperature = self.ai_config.get('temperature', 0.7)
         self.max_tokens = self.ai_config.get('max_tokens', 500)
 

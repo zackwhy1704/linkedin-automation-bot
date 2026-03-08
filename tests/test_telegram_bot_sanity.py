@@ -539,9 +539,10 @@ class TestPaymentCallbacks(unittest.TestCase):
             handle_promo_code_input(update, context)
         )
         self.assertEqual(result, ConversationHandler.END)
-        # Verify trial_period_days was passed
+        # Verify coupon discount was applied (100% off first month)
         call_kwargs = mock_stripe.checkout.Session.create.call_args[1]
-        self.assertEqual(call_kwargs['subscription_data']['trial_period_days'], 7)
+        self.assertIn('discounts', call_kwargs)
+        self.assertEqual(call_kwargs['discounts'][0]['coupon'], 'rHzJAvUc')
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -4285,6 +4286,182 @@ class TestWebhookSignatureVerification(unittest.TestCase):
                              data=b'payload',
                              headers={'Stripe-Signature': 'valid_sig'})
         self.assertEqual(resp.status_code, 200)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TEST: Daily Activity Limits
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestDailyActivityLimits(unittest.TestCase):
+    """Tests for per-user daily activity limit enforcement."""
+
+    @patch('multiuser.telegram_bot_multiuser.db')
+    def test_autopilot_blocked_when_post_limit_hit(self, mock_db):
+        """Autopilot should be blocked when post daily limit is reached."""
+        mock_db.is_subscription_active.return_value = True
+        # Return limit value for post, under for others
+        mock_db.get_daily_action_count.side_effect = lambda tid, atype: {
+            'post': 3, 'like': 10, 'connection': 5
+        }.get(atype, 0)
+
+        from multiuser.telegram_bot_multiuser import autopilot_command
+        update = make_update(text="/autopilot", user_id=12345)
+        context = make_context()
+
+        asyncio.get_event_loop().run_until_complete(
+            autopilot_command(update, context)
+        )
+        call_text = update.message.reply_text.call_args[0][0]
+        self.assertIn("Maximum activity reached", call_text)
+        self.assertIn("LIMIT REACHED", call_text)
+
+    @patch('multiuser.telegram_bot_multiuser.CELERY_ENABLED', True)
+    @patch('multiuser.telegram_bot_multiuser.autopilot_task')
+    @patch('multiuser.telegram_bot_multiuser.db')
+    def test_autopilot_proceeds_when_under_limits(self, mock_db, mock_task):
+        """Autopilot should proceed normally when under all daily limits."""
+        mock_db.is_subscription_active.return_value = True
+        mock_db.get_daily_action_count.return_value = 0
+
+        from multiuser.telegram_bot_multiuser import autopilot_command
+        update = make_update(text="/autopilot", user_id=12345)
+        context = make_context()
+
+        asyncio.get_event_loop().run_until_complete(
+            autopilot_command(update, context)
+        )
+        mock_task.delay.assert_called_once_with(12345)
+
+    @patch('multiuser.telegram_bot_multiuser.db')
+    def test_post_blocked_at_limit(self, mock_db):
+        """Post command should be blocked when post limit is reached."""
+        mock_db.is_subscription_active.return_value = True
+        mock_db.get_daily_action_count.return_value = 3  # post limit is 3
+
+        from multiuser.telegram_bot_multiuser import post_command
+        update = make_update(text="/post", user_id=12345)
+        context = make_context()
+
+        asyncio.get_event_loop().run_until_complete(
+            post_command(update, context)
+        )
+        call_text = update.message.reply_text.call_args[0][0]
+        self.assertIn("Maximum activity reached", call_text)
+
+    @patch('multiuser.telegram_bot_multiuser.db')
+    def test_engage_blocked_when_like_limit_hit(self, mock_db):
+        """Engage should be blocked when like daily limit is reached."""
+        mock_db.is_subscription_active.return_value = True
+        mock_db.get_credentials.return_value = ('email', b'pass')
+        mock_db.get_daily_action_count.side_effect = lambda tid, atype: {
+            'like': 50, 'comment': 5
+        }.get(atype, 0)
+
+        from multiuser.telegram_bot_multiuser import engage_command
+        update = make_update(text="/engage", user_id=12345)
+        context = make_context()
+
+        asyncio.get_event_loop().run_until_complete(
+            engage_command(update, context)
+        )
+        call_text = update.message.reply_text.call_args[0][0]
+        self.assertIn("Maximum activity reached", call_text)
+
+    @patch('multiuser.telegram_bot_multiuser.db')
+    def test_connect_blocked_when_connection_limit_hit(self, mock_db):
+        """Connect should be blocked when connection limit is reached."""
+        mock_db.is_subscription_active.return_value = True
+        mock_db.get_credentials.return_value = ('email', b'pass')
+        mock_db.get_daily_action_count.return_value = 20  # connection limit is 20
+
+        from multiuser.telegram_bot_multiuser import connect_command
+        update = make_update(text="/connect", user_id=12345)
+        context = make_context()
+
+        asyncio.get_event_loop().run_until_complete(
+            connect_command(update, context)
+        )
+        call_text = update.message.reply_text.call_args[0][0]
+        self.assertIn("Maximum activity reached", call_text)
+
+    @patch('multiuser.telegram_bot_multiuser.db')
+    def test_limit_message_shows_remaining_quota(self, mock_db):
+        """Limit message should show per-type usage and remaining count."""
+        mock_db.is_subscription_active.return_value = True
+        mock_db.get_daily_action_count.side_effect = lambda tid, atype: {
+            'post': 3, 'like': 40, 'connection': 15
+        }.get(atype, 0)
+
+        from multiuser.telegram_bot_multiuser import autopilot_command
+        update = make_update(text="/autopilot", user_id=12345)
+        context = make_context()
+
+        asyncio.get_event_loop().run_until_complete(
+            autopilot_command(update, context)
+        )
+        call_text = update.message.reply_text.call_args[0][0]
+        self.assertIn("remaining: 0", call_text)  # posts: 3/3
+        self.assertIn("remaining: 10", call_text)  # likes: 40/50
+        self.assertIn("remaining: 5", call_text)  # connections: 15/20
+
+    @patch('multiuser.telegram_bot_multiuser.CELERY_ENABLED', True)
+    @patch('multiuser.telegram_bot_multiuser.autopilot_task')
+    @patch('multiuser.telegram_bot_multiuser.db')
+    def test_fails_open_on_db_error(self, mock_db, mock_task):
+        """Command should still run if limit check DB query fails."""
+        mock_db.is_subscription_active.return_value = True
+        mock_db.get_daily_action_count.side_effect = Exception("DB connection lost")
+
+        from multiuser.telegram_bot_multiuser import autopilot_command
+        update = make_update(text="/autopilot", user_id=12345)
+        context = make_context()
+
+        asyncio.get_event_loop().run_until_complete(
+            autopilot_command(update, context)
+        )
+        # Should still dispatch because we fail open
+        mock_task.delay.assert_called_once_with(12345)
+
+    @patch('multiuser.telegram_bot_multiuser.db')
+    def test_schedule_blocked_when_post_limit_hit(self, mock_db):
+        """Schedule command should be blocked when post limit is reached."""
+        mock_db.is_subscription_active.return_value = True
+        mock_db.get_daily_action_count.return_value = 3
+
+        from multiuser.telegram_bot_multiuser import schedule_command
+        update = make_update(text="/schedule", user_id=12345)
+        context = make_context()
+
+        asyncio.get_event_loop().run_until_complete(
+            schedule_command(update, context)
+        )
+        call_text = update.message.reply_text.call_args[0][0]
+        self.assertIn("Maximum activity reached", call_text)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TEST: Onboarding Caution Message
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestOnboardingCautionMessage(unittest.TestCase):
+    """Tests that onboarding includes input quality caution."""
+
+    @patch('multiuser.telegram_bot_multiuser.db')
+    def test_start_includes_input_caution(self, mock_db):
+        """New user /start should include caution about input accuracy."""
+        mock_db.get_user.return_value = None  # new user
+
+        from multiuser.telegram_bot_multiuser import start
+        update = make_update(text="/start", user_id=99999, first_name="NewUser")
+        context = make_context()
+
+        asyncio.get_event_loop().run_until_complete(
+            start(update, context)
+        )
+        call_text = update.message.reply_text.call_args[0][0]
+        self.assertIn("ensure accuracy", call_text)
+        self.assertIn("AI-generated content", call_text)
+        self.assertIn("secondary LinkedIn account", call_text)
 
 
 if __name__ == '__main__':
