@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Platform Expansion Breakdown — WhatsApp + Facebook/Instagram/Rednote</title>
+    <style>
+        :root {
+            --primary: #1a73e8;
+            --primary-dark: #1557b0;
+            --bg: #f8f9fa;
+            --card-bg: #ffffff;
+            --text: #202124;
+            --text-secondary: #5f6368;
+            --border: #dadce0;
+            --success: #0d9488;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --purple: #7c3aed;
+            --pink: #ec4899;
+            --green: #10b981;
+            --orange: #f97316;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Oxygen, Ubuntu, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+        }
+
+        .hero {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            color: white;
+            padding: 60px 40px;
+            text-align: center;
+        }
+
+        .hero h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 12px;
+        }
+
+        .hero p {
+            font-size: 1.15rem;
+            opacity: 0.85;
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        .hero .badge-row {
+            margin-top: 24px;
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .hero .badge {
+            display: inline-block;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .badge-whatsapp { background: #25d366; color: #fff; }
+        .badge-facebook { background: #1877f2; color: #fff; }
+        .badge-instagram { background: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888); color: #fff; }
+        .badge-rednote { background: #ff2442; color: #fff; }
+
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 40px 24px;
+        }
+
+        .section {
+            margin-bottom: 48px;
+        }
+
+        .section-title {
+            font-size: 1.75rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: var(--text);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .section-title .icon {
+            font-size: 1.5rem;
+        }
+
+        .section-subtitle {
+            font-size: 1rem;
+            color: var(--text-secondary);
+            margin-bottom: 24px;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 28px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        }
+
+        .card h3 {
+            font-size: 1.25rem;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .card p {
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+        }
+
+        .platform-card {
+            border-left: 4px solid var(--primary);
+        }
+
+        .platform-card.whatsapp { border-left-color: #25d366; }
+        .platform-card.facebook { border-left-color: #1877f2; }
+        .platform-card.instagram { border-left-color: #e6683c; }
+        .platform-card.rednote { border-left-color: #ff2442; }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0;
+            font-size: 0.92rem;
+        }
+
+        thead {
+            background: #f1f3f5;
+        }
+
+        th {
+            text-align: left;
+            padding: 12px 16px;
+            font-weight: 600;
+            color: var(--text);
+            border-bottom: 2px solid var(--border);
+        }
+
+        td {
+            padding: 10px 16px;
+            border-bottom: 1px solid var(--border);
+            color: var(--text-secondary);
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tr:hover {
+            background: #f8f9ff;
+        }
+
+        .highlight-row {
+            background: #eef6ff;
+            font-weight: 600;
+        }
+
+        .highlight-row td {
+            color: var(--text);
+        }
+
+        code {
+            background: #f1f3f5;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+            font-size: 0.88rem;
+            color: #d63384;
+        }
+
+        .code-block {
+            background: #1e1e2e;
+            color: #cdd6f4;
+            padding: 20px 24px;
+            border-radius: 8px;
+            font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+            font-size: 0.85rem;
+            overflow-x: auto;
+            margin: 12px 0;
+            line-height: 1.7;
+        }
+
+        .code-block .comment { color: #6c7086; }
+        .code-block .keyword { color: #cba6f7; }
+        .code-block .string { color: #a6e3a1; }
+        .code-block .arrow { color: #89b4fa; }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .grid-3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .grid-2, .grid-3 { grid-template-columns: 1fr; }
+            .hero h1 { font-size: 1.75rem; }
+            .hero { padding: 40px 20px; }
+        }
+
+        .stat-card {
+            text-align: center;
+            padding: 24px 16px;
+        }
+
+        .stat-card .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        .stat-card .stat-label {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        .pro-con {
+            display: flex;
+            gap: 8px;
+            align-items: flex-start;
+            margin-bottom: 8px;
+        }
+
+        .pro-con .icon-check {
+            color: var(--success);
+            font-weight: 700;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+
+        .pro-con .icon-warn {
+            color: var(--warning);
+            font-weight: 700;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+
+        .pro-con .icon-cross {
+            color: var(--danger);
+            font-weight: 700;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+
+        .tag {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 0.78rem;
+            font-weight: 600;
+        }
+
+        .tag-easy { background: #d1fae5; color: #065f46; }
+        .tag-medium { background: #fef3c7; color: #92400e; }
+        .tag-hard { background: #fee2e2; color: #991b1b; }
+        .tag-api { background: #e0e7ff; color: #3730a3; }
+        .tag-browser { background: #fce7f3; color: #9d174d; }
+
+        .timeline {
+            position: relative;
+            padding-left: 32px;
+        }
+
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 12px;
+            top: 0;
+            bottom: 0;
+            width: 3px;
+            background: var(--border);
+            border-radius: 2px;
+        }
+
+        .timeline-item {
+            position: relative;
+            margin-bottom: 24px;
+        }
+
+        .timeline-item::before {
+            content: '';
+            position: absolute;
+            left: -25px;
+            top: 6px;
+            width: 13px;
+            height: 13px;
+            border-radius: 50%;
+            background: var(--primary);
+            border: 3px solid white;
+            box-shadow: 0 0 0 2px var(--primary);
+        }
+
+        .timeline-item h4 {
+            font-size: 1rem;
+            margin-bottom: 4px;
+        }
+
+        .timeline-item p {
+            color: var(--text-secondary);
+            font-size: 0.92rem;
+        }
+
+        .timeline-item .duration {
+            display: inline-block;
+            background: #e0e7ff;
+            color: #3730a3;
+            padding: 2px 10px;
+            border-radius: 10px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+
+        .pricing-card {
+            text-align: center;
+            padding: 32px 24px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .pricing-card.recommended {
+            border: 2px solid var(--primary);
+            box-shadow: 0 4px 20px rgba(26, 115, 232, 0.15);
+        }
+
+        .pricing-card.recommended::before {
+            content: 'RECOMMENDED';
+            position: absolute;
+            top: 12px;
+            right: -32px;
+            background: var(--primary);
+            color: white;
+            font-size: 0.7rem;
+            font-weight: 700;
+            padding: 4px 40px;
+            transform: rotate(45deg);
+        }
+
+        .pricing-card .tier-name {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+        }
+
+        .pricing-card .price {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        .pricing-card .price span {
+            font-size: 1rem;
+            font-weight: 400;
+            color: var(--text-secondary);
+        }
+
+        .pricing-card .features {
+            text-align: left;
+            margin: 20px 0;
+            list-style: none;
+        }
+
+        .pricing-card .features li {
+            padding: 6px 0;
+            color: var(--text-secondary);
+            font-size: 0.92rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .pricing-card .features li::before {
+            content: '✓';
+            color: var(--success);
+            font-weight: 700;
+        }
+
+        .arch-flow {
+            background: #1e1e2e;
+            color: #cdd6f4;
+            padding: 28px;
+            border-radius: 12px;
+            font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+            font-size: 0.85rem;
+            line-height: 1.8;
+            overflow-x: auto;
+            margin: 16px 0;
+        }
+
+        .divider {
+            height: 1px;
+            background: var(--border);
+            margin: 48px 0;
+        }
+
+        .callout {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 8px;
+            padding: 16px 20px;
+            margin: 16px 0;
+            font-size: 0.92rem;
+        }
+
+        .callout.warning {
+            background: #fffbeb;
+            border-color: #fde68a;
+        }
+
+        .callout.danger {
+            background: #fef2f2;
+            border-color: #fecaca;
+        }
+
+        .callout.success {
+            background: #ecfdf5;
+            border-color: #a7f3d0;
+        }
+
+        .callout strong {
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        footer {
+            text-align: center;
+            padding: 32px;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            border-top: 1px solid var(--border);
+        }
+    </style>
+</head>
+<body>
+
+<!-- HERO -->
+<div class="hero">
+    <h1>Platform Expansion Breakdown</h1>
+    <p>Full end-to-end analysis for porting the LinkedIn Automation Bot to WhatsApp, Facebook, Instagram, and Rednote — with scaling costs and pricing recommendations.</p>
+    <div class="badge-row">
+        <span class="badge badge-whatsapp">WhatsApp</span>
+        <span class="badge badge-facebook">Facebook</span>
+        <span class="badge badge-instagram">Instagram</span>
+        <span class="badge badge-rednote">Rednote</span>
+    </div>
+</div>
+
+<div class="container">
+
+    <!-- CURRENT ARCHITECTURE -->
+    <div class="section">
+        <div class="section-title"><span class="icon">⚙</span> Current Architecture</div>
+        <p class="section-subtitle">What you have today — and what's reusable across all platforms.</p>
+
+        <div class="arch-flow">
+<span class="comment">/* Current Flow */</span>
+
+Telegram (commands)  <span class="arrow">→</span>  Celery Queue (Redis)  <span class="arrow">→</span>  Browser Pool (Chrome)  <span class="arrow">→</span>  LinkedIn
+                     <span class="arrow">→</span>  AI Service (Claude Haiku)  <span class="arrow">→</span>  Content Generation
+                     <span class="arrow">→</span>  Stripe  <span class="arrow">→</span>  Payment / Subscription
+                     <span class="arrow">→</span>  PostgreSQL  <span class="arrow">→</span>  State / Tracking
+
+<span class="comment">/* 6 Docker Services */</span>
+db (postgres:16)  |  redis  |  bot  |  payment (gunicorn)  |  worker (celery)  |  caddy
+        </div>
+
+        <div class="card">
+            <h3>Reusable Components (Shared Across All Platforms)</h3>
+            <div class="grid-2">
+                <div>
+                    <div class="pro-con"><span class="icon-check">✓</span> <span>Celery task queue + Redis broker</span></div>
+                    <div class="pro-con"><span class="icon-check">✓</span> <span>AI service (Claude Haiku — post/comment generation)</span></div>
+                    <div class="pro-con"><span class="icon-check">✓</span> <span>PostgreSQL database (minor schema changes needed)</span></div>
+                </div>
+                <div>
+                    <div class="pro-con"><span class="icon-check">✓</span> <span>Stripe payment flow</span></div>
+                    <div class="pro-con"><span class="icon-check">✓</span> <span>Browser pool (for platforms without APIs)</span></div>
+                    <div class="pro-con"><span class="icon-check">✓</span> <span>Safety/rate limit manager</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- PLATFORM 1: WHATSAPP -->
+    <div class="section">
+        <div class="section-title"><span class="icon">💬</span> 1. WhatsApp — Command Interface</div>
+        <p class="section-subtitle">Replaces Telegram as the user-facing command interface. Users send commands via WhatsApp messages.</p>
+
+        <div class="card platform-card whatsapp">
+            <h3>Implementation: Telegram vs WhatsApp</h3>
+            <table>
+                <thead>
+                    <tr><th>Component</th><th>Telegram (Current)</th><th>WhatsApp (New)</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Bot framework</td><td><code>python-telegram-bot</code></td><td>Flask webhook + WhatsApp Cloud API</td></tr>
+                    <tr><td>User ID</td><td><code>telegram_id</code> (int)</td><td>Phone number (string)</td></tr>
+                    <tr><td>Commands</td><td><code>/post</code>, <code>/engage</code></td><td>Button templates + text commands</td></tr>
+                    <tr><td>Inline keyboards</td><td><code>InlineKeyboardMarkup</code></td><td>Interactive message templates (max 3 buttons)</td></tr>
+                    <tr><td>Media sending</td><td><code>send_photo()</code></td><td>WhatsApp Media API upload → send</td></tr>
+                    <tr><td>Deep links</td><td><code>t.me/bot?start=x</code></td><td><code>wa.me/number?text=x</code></td></tr>
+                    <tr><td>Payment link</td><td>Telegram WebApp</td><td>WhatsApp link message</td></tr>
+                    <tr><td>Conversation state</td><td><code>ConversationHandler</code></td><td>Custom state machine (session in Redis)</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="card">
+            <h3>Key Considerations</h3>
+            <div class="pro-con"><span class="icon-warn">⚠</span> <span><strong>24-hour messaging window:</strong> You can only reply within 24 hours of user's last message. Outside that, you must use pre-approved <strong>template messages</strong> ($0.005–0.08 each).</span></div>
+            <div class="pro-con"><span class="icon-warn">⚠</span> <span><strong>Verified Meta Business account</strong> + dedicated phone number required.</span></div>
+            <div class="pro-con"><span class="icon-warn">⚠</span> <span><strong>No rich formatting:</strong> No markdown — limited to bold, italic, strikethrough.</span></div>
+            <div class="pro-con"><span class="icon-warn">⚠</span> <span><strong>Button limits:</strong> Max 3 buttons per message (vs unlimited inline keyboard in Telegram).</span></div>
+            <div class="pro-con"><span class="icon-check">✓</span> <span><strong>Rate limits:</strong> 80 msgs/sec (Tier 1), scales to 1,000/sec at Tier 4.</span></div>
+            <div class="pro-con"><span class="icon-warn">⚠</span> <span><strong>Onboarding redesign:</strong> WhatsApp doesn't support multi-step ConversationHandlers natively.</span></div>
+        </div>
+
+        <div class="card">
+            <h3>Monthly Cost</h3>
+            <table>
+                <thead><tr><th>Item</th><th>Cost</th></tr></thead>
+                <tbody>
+                    <tr><td>WhatsApp Business API (Meta Cloud)</td><td>Free (self-hosted)</td></tr>
+                    <tr><td>Conversation charges (user-initiated)</td><td>~$0.005/conversation</td></tr>
+                    <tr><td>Template messages (bot-initiated)</td><td>$0.03–0.08/msg (region-dependent)</td></tr>
+                    <tr><td>Phone number verification</td><td>One-time, free</td></tr>
+                </tbody>
+            </table>
+            <p><span class="tag tag-medium">Estimated Effort: 2–3 weeks</span></p>
+        </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- PLATFORM 2: FACEBOOK -->
+    <div class="section">
+        <div class="section-title"><span class="icon">📘</span> 2. Facebook — Posting &amp; Engagement</div>
+        <p class="section-subtitle">You already have <code>facebook_bot/</code> with messenger conversations, lead scoring, and comment handling. ~80% of infrastructure exists.</p>
+
+        <div class="callout success">
+            <strong>Existing Code Advantage</strong>
+            Your codebase already includes <code>fb_leads</code>, <code>fb_messages</code>, <code>fb_comment_replies</code>, <code>fb_sequences</code>, and <code>fb_agent_alerts</code> tables — plus a working Messenger bot.
+        </div>
+
+        <div class="card platform-card facebook">
+            <h3>Implementation — Graph API (No Browser Automation Needed)</h3>
+            <div class="code-block">
+<span class="comment"># Posting</span>
+POST /{page-id}/feed     <span class="arrow">→</span> Text posts
+POST /{page-id}/photos   <span class="arrow">→</span> Image posts
+POST /{page-id}/videos   <span class="arrow">→</span> Video posts (Reels via /video_reels)
+
+<span class="comment"># Engagement</span>
+POST /{post-id}/likes     <span class="arrow">→</span> Like a post
+POST /{post-id}/comments  <span class="arrow">→</span> Comment on a post
+GET  /{page-id}/feed      <span class="arrow">→</span> Read feed for engagement targets
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Key Considerations</h3>
+            <div class="pro-con"><span class="icon-warn">⚠</span> <span>Requires <strong>Facebook Page</strong> (not personal profile) — personal profile automation violates ToS and has no API.</span></div>
+            <div class="pro-con"><span class="icon-warn">⚠</span> <span>Need <strong>Page Access Token</strong> with <code>pages_manage_posts</code>, <code>pages_read_engagement</code> permissions.</span></div>
+            <div class="pro-con"><span class="icon-warn">⚠</span> <span><strong>App Review required</strong> by Meta for publishing permissions (1–4 weeks approval).</span></div>
+            <div class="pro-con"><span class="icon-check">✓</span> <span>Rate limit: 200 calls/user/hour for Graph API.</span></div>
+            <div class="pro-con"><span class="icon-warn">⚠</span> <span>Facebook's algorithm penalizes automated/spammy behavior — need human-like timing.</span></div>
+        </div>
+
+        <div class="card">
+            <h3>What's Missing From Your Existing Facebook Code</h3>
+            <div class="pro-con"><span class="icon-cross">✗</span> <span>Post creation (current code is lead-gen focused, not content posting)</span></div>
+            <div class="pro-con"><span class="icon-cross">✗</span> <span>Feed engagement (like/comment automation)</span></div>
+            <div class="pro-con"><span class="icon-cross">✗</span> <span>Analytics/stats tracking</span></div>
+            <div class="pro-con"><span class="icon-cross">✗</span> <span>Integration with the WhatsApp command interface</span></div>
+        </div>
+
+        <div class="card">
+            <h3>Monthly Cost</h3>
+            <table>
+                <thead><tr><th>Item</th><th>Cost</th></tr></thead>
+                <tbody>
+                    <tr><td>Facebook Graph API</td><td>Free</td></tr>
+                    <tr><td>Meta App Review</td><td>Free (one-time, takes 1–4 weeks)</td></tr>
+                    <tr><td>No browser automation needed</td><td>$0</td></tr>
+                </tbody>
+            </table>
+            <p><span class="tag tag-easy">Estimated Effort: 1.5 weeks</span></p>
+        </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- PLATFORM 3: INSTAGRAM -->
+    <div class="section">
+        <div class="section-title"><span class="icon">📸</span> 3. Instagram — Posting &amp; Engagement</div>
+        <p class="section-subtitle">Instagram Graph API via Meta Business Suite — same developer account as Facebook.</p>
+
+        <div class="card platform-card instagram">
+            <h3>Implementation — Instagram Graph API</h3>
+            <div class="code-block">
+<span class="comment"># Posting (two-step process)</span>
+POST /{ig-user-id}/media          <span class="arrow">→</span> Create media container (image/video/carousel)
+POST /{ig-user-id}/media_publish  <span class="arrow">→</span> Publish the container
+
+<span class="comment"># Engagement</span>
+POST /{media-id}/comments   <span class="arrow">→</span> Comment on posts
+GET  /{ig-user-id}/media    <span class="arrow">→</span> Get user's posts
+<span class="comment"># NOTE: No API for liking posts — only comment management</span>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Key Considerations</h3>
+            <div class="pro-con"><span class="icon-warn">⚠</span> <span><strong>Instagram Business/Creator account</strong> required (linked to Facebook Page).</span></div>
+            <div class="pro-con"><span class="icon-cross">✗</span> <span><strong>No like API</strong> — Instagram Graph API does NOT support liking other users' posts. Browser automation needed (risky — Instagram bans aggressively).</span></div>
+            <div class="pro-con"><span class="icon-cross">✗</span> <span><strong>No general DM API</strong> — only reply to user-initiated DMs via Messenger API.</span></div>
+            <div class="pro-con"><span class="icon-warn">⚠</span> <span><strong>Publishing limits:</strong> 25 API posts per 24-hour period per account.</span></div>
+            <div class="pro-con"><span class="icon-check">✓</span> <span><strong>Carousel support:</strong> Up to 10 images/videos per carousel.</span></div>
+            <div class="pro-con"><span class="icon-check">✓</span> <span><strong>Reels:</strong> Supported via <code>/media</code> endpoint with <code>media_type=REELS</code>.</span></div>
+            <div class="pro-con"><span class="icon-check">✓</span> <span><strong>Hashtag research:</strong> Available via <code>/ig_hashtag_search</code> endpoint.</span></div>
+            <div class="pro-con"><span class="icon-warn">⚠</span> <span><strong>Media hosting:</strong> Images must be at a <strong>public URL</strong> before publishing (upload to S3/CDN first).</span></div>
+            <div class="pro-con"><span class="icon-warn">⚠</span> <span><strong>Caption limit:</strong> 2,200 characters. Rate limit: 200 calls/user/hour.</span></div>
+        </div>
+
+        <div class="card">
+            <h3>Monthly Cost</h3>
+            <table>
+                <thead><tr><th>Item</th><th>Cost</th></tr></thead>
+                <tbody>
+                    <tr><td>Instagram Graph API</td><td>Free</td></tr>
+                    <tr><td>Media hosting (S3/CDN)</td><td>~$5–15/month for images</td></tr>
+                    <tr><td>Browser automation (if liking)</td><td>Same Chrome instance cost as LinkedIn</td></tr>
+                </tbody>
+            </table>
+            <p><span class="tag tag-medium">Estimated Effort: 3 weeks</span></p>
+        </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- PLATFORM 4: REDNOTE -->
+    <div class="section">
+        <div class="section-title"><span class="icon">📕</span> 4. Rednote (Xiaohongshu / 小红书)</div>
+        <p class="section-subtitle">The hardest platform. No public API — 100% browser automation required.</p>
+
+        <div class="callout danger">
+            <strong>High Risk Platform</strong>
+            Rednote has no official API. All automation requires browser automation or reverse-engineering private APIs. Aggressive anti-bot detection and Chinese regulatory considerations add significant risk.
+        </div>
+
+        <div class="card platform-card rednote">
+            <h3>Implementation — Browser Automation Only</h3>
+            <div class="code-block">
+<span class="comment"># Same approach as LinkedIn</span>
+Selenium/Playwright  <span class="arrow">→</span>  Login  <span class="arrow">→</span>  Navigate  <span class="arrow">→</span>  Post/Engage
+                     <span class="arrow">→</span>  Anti-detection (fingerprinting, captcha solving)
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Key Considerations</h3>
+            <div class="pro-con"><span class="icon-cross">✗</span> <span><strong>No official API</strong> — 100% browser automation or reverse-engineering private APIs.</span></div>
+            <div class="pro-con"><span class="icon-cross">✗</span> <span><strong>Aggressive anti-bot detection:</strong> Advanced fingerprinting, behavioral analysis, and CAPTCHA challenges.</span></div>
+            <div class="pro-con"><span class="icon-warn">⚠</span> <span><strong>Chinese phone number</strong> typically required for account creation.</span></div>
+            <div class="pro-con"><span class="icon-warn">⚠</span> <span><strong>Content format:</strong> Image-first platform. Text posts need cover images.</span></div>
+            <div class="pro-con"><span class="icon-check">✓</span> <span><strong>Language:</strong> Primarily Chinese — Claude handles Chinese content generation well.</span></div>
+            <div class="pro-con"><span class="icon-cross">✗</span> <span><strong>Legal risk:</strong> Violating ToS in China's regulatory environment carries more risk.</span></div>
+            <div class="pro-con"><span class="icon-cross">✗</span> <span><strong>Login flow:</strong> Phone/SMS verification, WeChat login — all harder to automate.</span></div>
+            <div class="pro-con"><span class="icon-warn">⚠</span> <span><strong>Rate limits:</strong> Unknown (no documentation), accounts get banned quickly with automation.</span></div>
+            <div class="pro-con"><span class="icon-warn">⚠</span> <span><strong>Captcha solving:</strong> Needs a service like 2captcha or hCaptcha solver (~$2–3/1,000 solves).</span></div>
+        </div>
+
+        <div class="card">
+            <h3>Monthly Cost</h3>
+            <table>
+                <thead><tr><th>Item</th><th>Cost</th></tr></thead>
+                <tbody>
+                    <tr><td>Captcha solving service</td><td>$10–50/month (volume-dependent)</td></tr>
+                    <tr><td>Proxy rotation (Chinese IPs needed)</td><td>$30–100/month</td></tr>
+                    <tr><td>Browser automation (Chrome)</td><td>Same as LinkedIn infrastructure</td></tr>
+                    <tr><td>SMS verification service</td><td>$5–20/month</td></tr>
+                </tbody>
+            </table>
+            <p><span class="tag tag-hard">Estimated Effort: 5–6 weeks</span></p>
+        </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- SCALING COSTS -->
+    <div class="section">
+        <div class="section-title"><span class="icon">📊</span> Infrastructure &amp; Scaling Costs</div>
+        <p class="section-subtitle">Resource consumption per user and server sizing at each scale tier.</p>
+
+        <div class="card">
+            <h3>Per-User Resource Consumption</h3>
+            <table>
+                <thead><tr><th>Resource</th><th>Per Active User</th></tr></thead>
+                <tbody>
+                    <tr><td>Chrome instance (browser pool)</td><td>~300–500 MB RAM per concurrent session</td></tr>
+                    <tr><td>PostgreSQL storage</td><td>~5 MB/year</td></tr>
+                    <tr><td>Redis memory</td><td>~1 KB per active session</td></tr>
+                    <tr><td>AI API calls (Claude Haiku)</td><td>~50–100 calls/day</td></tr>
+                    <tr><td>Celery task slots</td><td>1 concurrent task</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="card">
+            <h3>Server Sizing by Scale</h3>
+            <table>
+                <thead><tr><th>Scale</th><th>Users</th><th>Server Spec</th><th>Monthly Cost</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>Small</strong></td><td>100</td><td>4 vCPU, 8 GB RAM, 80 GB SSD (Hetzner CX31)</td><td>~$15/month</td></tr>
+                    <tr><td><strong>Medium</strong></td><td>1,000</td><td>8 vCPU, 32 GB RAM, 240 GB SSD (CX41) + 2 worker nodes</td><td>~$80/month</td></tr>
+                    <tr><td><strong>Large</strong></td><td>100,000</td><td>Kubernetes cluster: 20+ nodes, managed Postgres, Redis cluster</td><td>~$3,000–8,000/month</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- 100 users -->
+        <div class="card">
+            <h3>Full Cost Breakdown — 100 Users</h3>
+            <table>
+                <thead><tr><th>Cost Item</th><th>Monthly</th></tr></thead>
+                <tbody>
+                    <tr><td>Hetzner VPS (CX31)</td><td>$15</td></tr>
+                    <tr><td>Claude Haiku API (5K–10K calls/day)</td><td>$15–30</td></tr>
+                    <tr><td>WhatsApp template messages</td><td>$5–10</td></tr>
+                    <tr><td>Media storage (S3)</td><td>$5</td></tr>
+                    <tr><td>Captcha solving (Rednote)</td><td>$10</td></tr>
+                    <tr><td>Proxy service (Rednote)</td><td>$30</td></tr>
+                    <tr><td>Domain + SSL</td><td>$1</td></tr>
+                    <tr class="highlight-row"><td><strong>Total</strong></td><td><strong>~$80–100/month</strong></td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- 1,000 users -->
+        <div class="card">
+            <h3>Full Cost Breakdown — 1,000 Users</h3>
+            <table>
+                <thead><tr><th>Cost Item</th><th>Monthly</th></tr></thead>
+                <tbody>
+                    <tr><td>Hetzner servers (3 nodes)</td><td>$80</td></tr>
+                    <tr><td>Claude Haiku API (50K–100K calls/day)</td><td>$150–300</td></tr>
+                    <tr><td>WhatsApp conversations</td><td>$50–100</td></tr>
+                    <tr><td>Media storage (S3)</td><td>$20</td></tr>
+                    <tr><td>Captcha solving (Rednote)</td><td>$50</td></tr>
+                    <tr><td>Proxy service (Rednote)</td><td>$100</td></tr>
+                    <tr><td>Managed PostgreSQL</td><td>$30</td></tr>
+                    <tr><td>Redis (managed)</td><td>$15</td></tr>
+                    <tr class="highlight-row"><td><strong>Total</strong></td><td><strong>~$500–700/month</strong></td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- 100,000 users -->
+        <div class="card">
+            <h3>Full Cost Breakdown — 100,000 Users</h3>
+            <table>
+                <thead><tr><th>Cost Item</th><th>Monthly</th></tr></thead>
+                <tbody>
+                    <tr><td>Cloud infrastructure (K8s)</td><td>$3,000–5,000</td></tr>
+                    <tr><td>Claude Haiku API (5M+ calls/day)</td><td>$5,000–15,000</td></tr>
+                    <tr><td>WhatsApp conversations</td><td>$3,000–5,000</td></tr>
+                    <tr><td>Media storage + CDN</td><td>$200–500</td></tr>
+                    <tr><td>Captcha solving (Rednote)</td><td>$500–1,000</td></tr>
+                    <tr><td>Proxy rotation (Rednote)</td><td>$1,000–3,000</td></tr>
+                    <tr><td>Managed DB (multi-region)</td><td>$500–1,000</td></tr>
+                    <tr><td>Monitoring/logging</td><td>$200–500</td></tr>
+                    <tr><td>Support/on-call</td><td>$2,000+</td></tr>
+                    <tr class="highlight-row"><td><strong>Total</strong></td><td><strong>~$15,000–30,000/month</strong></td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Cost per user summary -->
+        <div class="grid-3">
+            <div class="card stat-card">
+                <div class="stat-value">~$1.00</div>
+                <div class="stat-label">Cost/User @ 100 Users</div>
+            </div>
+            <div class="card stat-card">
+                <div class="stat-value">~$0.60</div>
+                <div class="stat-label">Cost/User @ 1,000 Users</div>
+            </div>
+            <div class="card stat-card">
+                <div class="stat-value">~$0.20</div>
+                <div class="stat-label">Cost/User @ 100,000 Users</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- PRICING RECOMMENDATION -->
+    <div class="section">
+        <div class="section-title"><span class="icon">💰</span> Recommended Subscription Pricing</div>
+        <p class="section-subtitle">Tiered pricing model to maximize revenue across user segments.</p>
+
+        <div class="grid-2" style="grid-template-columns: repeat(4, 1fr);">
+            <div class="card pricing-card">
+                <div class="tier-name">Starter</div>
+                <div class="price">$14.99<span>/mo</span></div>
+                <ul class="features">
+                    <li>1 platform (Facebook OR Instagram)</li>
+                    <li>3 posts/day</li>
+                    <li>Basic engagement</li>
+                    <li>AI content generation</li>
+                    <li>Basic analytics</li>
+                </ul>
+            </div>
+            <div class="card pricing-card recommended">
+                <div class="tier-name">Growth</div>
+                <div class="price">$29.99<span>/mo</span></div>
+                <ul class="features">
+                    <li>2 platforms</li>
+                    <li>5 posts/day</li>
+                    <li>AI comments &amp; engagement</li>
+                    <li>Post scheduling</li>
+                    <li>Full analytics</li>
+                </ul>
+            </div>
+            <div class="card pricing-card">
+                <div class="tier-name">Pro</div>
+                <div class="price">$49.99<span>/mo</span></div>
+                <ul class="features">
+                    <li>All 4 platforms</li>
+                    <li>Unlimited posts</li>
+                    <li>Autopilot mode</li>
+                    <li>Advanced analytics</li>
+                    <li>Priority support</li>
+                </ul>
+            </div>
+            <div class="card pricing-card">
+                <div class="tier-name">Enterprise</div>
+                <div class="price">$99.99<span>/mo</span></div>
+                <ul class="features">
+                    <li>All platforms + API access</li>
+                    <li>White-label option</li>
+                    <li>Custom AI training</li>
+                    <li>Dedicated support</li>
+                    <li>Multi-account management</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card" style="margin-top: 24px;">
+            <h3>Margin Analysis by Scale</h3>
+            <table>
+                <thead><tr><th>Scale</th><th>Your Cost/User</th><th>Recommended Price</th><th>Gross Margin</th></tr></thead>
+                <tbody>
+                    <tr><td>100 users</td><td>~$1.00/user</td><td>$29.99/month (keep current)</td><td>96%</td></tr>
+                    <tr><td>1,000 users</td><td>~$0.60/user</td><td>$24.99/month (volume tier)</td><td>97%</td></tr>
+                    <tr><td>100,000 users</td><td>~$0.20/user</td><td>$19.99/month (mass market)</td><td>99%</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- IMPLEMENTATION TIMELINE -->
+    <div class="section">
+        <div class="section-title"><span class="icon">🗓</span> Implementation Priority &amp; Timeline</div>
+        <p class="section-subtitle">Recommended build order — lowest effort and highest impact first.</p>
+
+        <div class="card">
+            <div class="timeline">
+                <div class="timeline-item">
+                    <h4>Phase 1: Facebook <span class="duration">1.5 weeks</span> <span class="tag tag-easy">Easy</span> <span class="tag tag-api">Graph API</span></h4>
+                    <p>Lowest effort — you have existing code in <code>facebook_bot/</code>. Graph API is stable and well-documented. Add post creation and feed engagement to complement existing Messenger/lead-gen features.</p>
+                </div>
+                <div class="timeline-item">
+                    <h4>Phase 2: Instagram <span class="duration">3 weeks</span> <span class="tag tag-medium">Medium</span> <span class="tag tag-api">Graph API</span></h4>
+                    <p>Same Meta developer account as Facebook — shares authentication infrastructure. Two-step publishing (create container → publish). Note: no like API, would need browser automation for liking.</p>
+                </div>
+                <div class="timeline-item">
+                    <h4>Phase 3: WhatsApp <span class="duration">2–3 weeks</span> <span class="tag tag-medium">Medium</span> <span class="tag tag-api">Cloud API</span></h4>
+                    <p>Can run in parallel with platform work. Same Meta Business account. Replaces Telegram command interface. Requires rebuilding conversation state machine and adapting to 3-button limit.</p>
+                </div>
+                <div class="timeline-item">
+                    <h4>Phase 4: Rednote <span class="duration">5–6 weeks</span> <span class="tag tag-hard">Hard</span> <span class="tag tag-browser">Browser Automation</span></h4>
+                    <p>Highest risk and effort. No public API — requires browser automation with anti-detection measures. Consider dropping if margins don't justify the maintenance burden and ban risk.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid-2">
+            <div class="card stat-card">
+                <div class="stat-value">10–12 weeks</div>
+                <div class="stat-label">Total Estimated Timeline (some parallelizable)</div>
+            </div>
+            <div class="card stat-card">
+                <div class="stat-value" style="color: var(--success);">1 Key Refactor</div>
+                <div class="stat-label">Abstract command interface for WhatsApp + Telegram</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- ARCHITECTURAL CHANGES -->
+    <div class="section">
+        <div class="section-title"><span class="icon">🏗</span> Architectural Changes Required</div>
+        <p class="section-subtitle">What needs to be redesigned vs what works as-is.</p>
+
+        <div class="grid-2">
+            <div class="card">
+                <h3 style="color: var(--success);">Works Well (Keep As-Is)</h3>
+                <div class="pro-con"><span class="icon-check">✓</span> <span>Multi-user task queue (Celery) — scales horizontally</span></div>
+                <div class="pro-con"><span class="icon-check">✓</span> <span>Browser pool management — resource efficient</span></div>
+                <div class="pro-con"><span class="icon-check">✓</span> <span>Database schema — flexible, ready for multi-platform</span></div>
+                <div class="pro-con"><span class="icon-check">✓</span> <span>Payment system — generic Stripe implementation</span></div>
+                <div class="pro-con"><span class="icon-check">✓</span> <span>AI service layer — platform-agnostic Claude integration</span></div>
+                <div class="pro-con"><span class="icon-check">✓</span> <span>Safety limits — prevent account bans</span></div>
+            </div>
+            <div class="card">
+                <h3 style="color: var(--danger);">Needs Redesign</h3>
+                <div class="pro-con"><span class="icon-cross">✗</span> <span>Telegram command handlers → abstract command interface</span></div>
+                <div class="pro-con"><span class="icon-cross">✗</span> <span>LinkedIn browser automation → API calls where possible</span></div>
+                <div class="pro-con"><span class="icon-cross">✗</span> <span>Telegram notifications → platform-specific message templates</span></div>
+                <div class="pro-con"><span class="icon-cross">✗</span> <span>User ID mapping → unified user model with platform flag</span></div>
+                <div class="pro-con"><span class="icon-cross">✗</span> <span>Conversation state machine → generic state handler</span></div>
+                <div class="pro-con"><span class="icon-cross">✗</span> <span>Platform-specific rate limits per social network</span></div>
+            </div>
+        </div>
+
+        <div class="callout">
+            <strong>Key Schema Change</strong>
+            The current <code>users</code> table uses <code>telegram_id</code> as the primary user identifier. For multi-platform, add a <code>platform</code> column (e.g., <code>'telegram'</code>, <code>'whatsapp'</code>) and migrate to a unified <code>user_id</code> + <code>platform</code> composite key. Similarly, add a <code>target_platform</code> column to track which social media each automation targets (LinkedIn, Facebook, Instagram, Rednote).
+        </div>
+    </div>
+
+</div>
+
+<footer>
+    Platform Expansion Breakdown &mdash; Generated March 2026 &mdash; LinkedIn Automation Bot Project
+</footer>
+
+</body>
+</html>

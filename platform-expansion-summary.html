@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Platform Expansion — Summary Tables</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif; background: #f8f9fa; color: #202124; padding: 40px 24px; }
+        .container { max-width: 1100px; margin: 0 auto; }
+        h1 { font-size: 1.75rem; margin-bottom: 6px; }
+        .subtitle { color: #5f6368; margin-bottom: 32px; font-size: 0.95rem; }
+        h2 { font-size: 1.15rem; margin: 32px 0 12px; color: #1a73e8; }
+        table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 28px; font-size: 0.88rem; }
+        th { background: #1a1a2e; color: #fff; text-align: left; padding: 10px 14px; font-weight: 600; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.5px; }
+        td { padding: 9px 14px; border-bottom: 1px solid #e8eaed; vertical-align: top; }
+        tr:last-child td { border-bottom: none; }
+        tr:hover { background: #f8f9ff; }
+        .g { color: #0d9488; font-weight: 600; }
+        .y { color: #d97706; font-weight: 600; }
+        .r { color: #dc2626; font-weight: 600; }
+        .b { color: #1a73e8; font-weight: 600; }
+        .bold { font-weight: 600; color: #202124; }
+        .total { background: #eef6ff; font-weight: 700; }
+        .total td { color: #1a1a2e; border-top: 2px solid #1a73e8; }
+        .rec { background: #ecfdf5; }
+        code { background: #f1f3f5; padding: 1px 6px; border-radius: 3px; font-size: 0.82rem; }
+        footer { text-align: center; color: #9ca3af; font-size: 0.78rem; margin-top: 40px; }
+    </style>
+</head>
+<body>
+<div class="container">
+
+<h1>Platform Expansion — Summary</h1>
+<p class="subtitle">Concise comparison of WhatsApp + Facebook / Instagram / Rednote implementation</p>
+
+<!-- TABLE 1: Platform Comparison -->
+<h2>1. Platform Comparison</h2>
+<table>
+    <thead>
+        <tr><th></th><th>WhatsApp</th><th>Facebook</th><th>Instagram</th><th>Rednote</th></tr>
+    </thead>
+    <tbody>
+        <tr><td class="bold">Role</td><td>Command interface (replaces Telegram)</td><td>Social posting &amp; engagement</td><td>Social posting &amp; engagement</td><td>Social posting &amp; engagement</td></tr>
+        <tr><td class="bold">Integration</td><td>WhatsApp Cloud API</td><td>Graph API</td><td>Graph API</td><td>Browser automation (Selenium)</td></tr>
+        <tr><td class="bold">API Available?</td><td class="g">Yes</td><td class="g">Yes</td><td class="y">Partial (no likes)</td><td class="r">No</td></tr>
+        <tr><td class="bold">Account Needed</td><td>Meta Business + phone number</td><td>Facebook Page + App Review</td><td>Business/Creator account</td><td>Chinese phone number</td></tr>
+        <tr><td class="bold">Posting</td><td>N/A (command layer)</td><td>Text, image, video, Reels</td><td>Image, video, carousel, Reels</td><td>Image + text (cover required)</td></tr>
+        <tr><td class="bold">Engagement</td><td>N/A</td><td class="g">Like + Comment via API</td><td class="y">Comment only (no like API)</td><td class="r">Browser only, high ban risk</td></tr>
+        <tr><td class="bold">Rate Limits</td><td>80–1000 msg/sec (tiered)</td><td>200 calls/user/hour</td><td>200 calls/user/hour, 25 posts/day</td><td>Unknown, aggressive bans</td></tr>
+        <tr><td class="bold">Key Risk</td><td class="y">24-hour reply window, 3-button limit</td><td class="y">App Review (1–4 weeks)</td><td class="y">No like API, media must be public URL</td><td class="r">Anti-bot detection, captchas, legal</td></tr>
+        <tr><td class="bold">Existing Code</td><td class="r">None</td><td class="g">~80% done (facebook_bot/)</td><td class="r">None</td><td class="r">None</td></tr>
+        <tr><td class="bold">Effort</td><td class="y">2–3 weeks</td><td class="g">1.5 weeks</td><td class="y">3 weeks</td><td class="r">5–6 weeks</td></tr>
+        <tr><td class="bold">Difficulty</td><td class="y">Medium</td><td class="g">Easy</td><td class="y">Medium</td><td class="r">Hard</td></tr>
+    </tbody>
+</table>
+
+<!-- TABLE 2: Cost Breakdown -->
+<h2>2. Monthly Operating Costs by Scale</h2>
+<table>
+    <thead>
+        <tr><th>Cost Item</th><th>100 Users</th><th>1,000 Users</th><th>100,000 Users</th></tr>
+    </thead>
+    <tbody>
+        <tr><td class="bold">Servers (Hetzner / K8s)</td><td>$15</td><td>$80</td><td>$3,000–5,000</td></tr>
+        <tr><td class="bold">Claude Haiku API</td><td>$15–30</td><td>$150–300</td><td>$5,000–15,000</td></tr>
+        <tr><td class="bold">WhatsApp messaging</td><td>$5–10</td><td>$50–100</td><td>$3,000–5,000</td></tr>
+        <tr><td class="bold">Media storage (S3/CDN)</td><td>$5</td><td>$20</td><td>$200–500</td></tr>
+        <tr><td class="bold">Captcha solving (Rednote)</td><td>$10</td><td>$50</td><td>$500–1,000</td></tr>
+        <tr><td class="bold">Proxy rotation (Rednote)</td><td>$30</td><td>$100</td><td>$1,000–3,000</td></tr>
+        <tr><td class="bold">Managed DB + Redis</td><td>—</td><td>$45</td><td>$500–1,000</td></tr>
+        <tr><td class="bold">Monitoring / support</td><td>$1</td><td>—</td><td>$2,200–2,500</td></tr>
+        <tr class="total"><td>Total</td><td>$80–100</td><td>$500–700</td><td>$15,000–30,000</td></tr>
+        <tr class="total"><td>Cost per user</td><td>~$1.00</td><td>~$0.60</td><td>~$0.20</td></tr>
+    </tbody>
+</table>
+
+<!-- TABLE 3: Pricing Tiers -->
+<h2>3. Recommended Subscription Pricing</h2>
+<table>
+    <thead>
+        <tr><th>Tier</th><th>Price</th><th>Platforms</th><th>Features</th></tr>
+    </thead>
+    <tbody>
+        <tr><td class="bold">Starter</td><td>$14.99/mo</td><td>1 platform</td><td>3 posts/day, basic engagement, AI content</td></tr>
+        <tr class="rec"><td class="bold">Growth</td><td class="b">$29.99/mo</td><td>2 platforms</td><td>5 posts/day, AI comments, scheduling, analytics</td></tr>
+        <tr><td class="bold">Pro</td><td>$49.99/mo</td><td>All 4 platforms</td><td>Unlimited posts, autopilot, advanced analytics</td></tr>
+        <tr><td class="bold">Enterprise</td><td>$99.99/mo</td><td>All + API access</td><td>White-label, custom AI, multi-account, priority support</td></tr>
+    </tbody>
+</table>
+
+<!-- TABLE 4: Margin -->
+<h2>4. Margin at Scale (Growth Tier @ $29.99)</h2>
+<table>
+    <thead>
+        <tr><th>Users</th><th>Revenue/mo</th><th>Cost/mo</th><th>Profit/mo</th><th>Gross Margin</th></tr>
+    </thead>
+    <tbody>
+        <tr><td class="bold">100</td><td>$2,999</td><td>$100</td><td>$2,899</td><td class="g">96%</td></tr>
+        <tr><td class="bold">1,000</td><td>$29,990</td><td>$700</td><td>$29,290</td><td class="g">97%</td></tr>
+        <tr><td class="bold">100,000</td><td>$2,999,000</td><td>$30,000</td><td>$2,969,000</td><td class="g">99%</td></tr>
+    </tbody>
+</table>
+
+<!-- TABLE 5: Resource per user -->
+<h2>5. Per-User Resource Consumption</h2>
+<table>
+    <thead>
+        <tr><th>Resource</th><th>Per Active User</th></tr>
+    </thead>
+    <tbody>
+        <tr><td class="bold">Chrome instance (browser pool)</td><td>300–500 MB RAM per concurrent session</td></tr>
+        <tr><td class="bold">PostgreSQL storage</td><td>~5 MB/year</td></tr>
+        <tr><td class="bold">Redis memory</td><td>~1 KB per active session</td></tr>
+        <tr><td class="bold">Claude Haiku API calls</td><td>50–100 calls/day</td></tr>
+        <tr><td class="bold">Celery task slots</td><td>1 concurrent task</td></tr>
+    </tbody>
+</table>
+
+<!-- TABLE 6: Implementation -->
+<h2>6. Implementation Priority &amp; Timeline</h2>
+<table>
+    <thead>
+        <tr><th>Phase</th><th>Platform</th><th>Effort</th><th>Difficulty</th><th>Method</th><th>Why This Order</th></tr>
+    </thead>
+    <tbody>
+        <tr><td class="bold">1</td><td>Facebook</td><td>1.5 weeks</td><td class="g">Easy</td><td>Graph API</td><td>80% code exists, stable API, shares Meta account with Phase 2</td></tr>
+        <tr><td class="bold">2</td><td>Instagram</td><td>3 weeks</td><td class="y">Medium</td><td>Graph API</td><td>Same Meta dev account, shares Facebook infra</td></tr>
+        <tr><td class="bold">3</td><td>WhatsApp</td><td>2–3 weeks</td><td class="y">Medium</td><td>Cloud API</td><td>Parallelizable with Phase 2, same Meta Business account</td></tr>
+        <tr><td class="bold">4</td><td>Rednote</td><td>5–6 weeks</td><td class="r">Hard</td><td>Browser</td><td>Highest risk, no API — consider dropping if margins don't justify</td></tr>
+        <tr class="total"><td></td><td colspan="5">Total: 10–12 weeks (some phases parallelizable)</td></tr>
+    </tbody>
+</table>
+
+<!-- TABLE 7: Architecture -->
+<h2>7. Architecture — Keep vs Redesign</h2>
+<table>
+    <thead>
+        <tr><th>Component</th><th>Status</th><th>Action</th></tr>
+    </thead>
+    <tbody>
+        <tr><td class="bold">Celery task queue + Redis</td><td class="g">Ready</td><td>Keep as-is — scales horizontally</td></tr>
+        <tr><td class="bold">AI service (Claude Haiku)</td><td class="g">Ready</td><td>Keep — platform-agnostic</td></tr>
+        <tr><td class="bold">PostgreSQL schema</td><td class="y">Minor change</td><td>Add <code>platform</code> column, unified <code>user_id</code></td></tr>
+        <tr><td class="bold">Stripe payment</td><td class="g">Ready</td><td>Keep — generic implementation</td></tr>
+        <tr><td class="bold">Browser pool</td><td class="g">Ready</td><td>Keep for Rednote / Instagram likes</td></tr>
+        <tr><td class="bold">Safety/rate limits</td><td class="y">Minor change</td><td>Add per-platform rate limit configs</td></tr>
+        <tr><td class="bold">Telegram command handlers</td><td class="r">Redesign</td><td>Abstract into platform-agnostic command router</td></tr>
+        <tr><td class="bold">LinkedIn automation</td><td class="r">Redesign</td><td>Replace with API calls per platform</td></tr>
+        <tr><td class="bold">Notification system</td><td class="r">Redesign</td><td>Platform-specific message templates</td></tr>
+        <tr><td class="bold">User ID mapping</td><td class="r">Redesign</td><td>Unified user model with <code>platform</code> flag</td></tr>
+        <tr><td class="bold">Conversation state</td><td class="r">Redesign</td><td>Generic state handler (Redis-backed)</td></tr>
+    </tbody>
+</table>
+
+</div>
+<footer>Platform Expansion Summary &mdash; Generated March 2026</footer>
+</body>
+</html>
