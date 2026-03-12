@@ -342,7 +342,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             f"/schedule - Schedule content\n"
             f"/stats - View analytics\n"
             f"/settings - Update your profile\n"
-            f"/help - Get help"
+            f"/help - Get help\n\n"
+            f"💡 Send /home anytime to return to this menu."
         )
         return ConversationHandler.END
 
@@ -359,7 +360,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         f"⚠️ Note: Please ensure accuracy in your inputs (spelling, relevance) "
         f"as they directly shape the AI-generated content on your LinkedIn profile.\n\n"
         f"First, what's your industry? (e.g., software development, marketing, sales)\n\n"
-        f"Type /cancel at any time to exit setup."
+        f"Send /cancel to exit setup or /home for main menu."
     )
 
     return PROFILE_INDUSTRY
@@ -390,7 +391,7 @@ async def profile_industry(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     await update.message.reply_text(
         "Great! Now, what are your key skills? (comma-separated)\n"
         "Example: Python, automation, AI, web development\n\n"
-        "Type /cancel to exit setup."
+        "Send /cancel to exit setup or /home for main menu."
     )
     return PROFILE_SKILLS
 
@@ -420,7 +421,7 @@ async def profile_skills(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await update.message.reply_text(
         "Perfect! What are your career goals?\n"
         "Example: senior developer role, technical sales, business development\n\n"
-        "Type /cancel to exit setup."
+        "Send /cancel to exit setup or /home for main menu."
     )
     return PROFILE_GOALS
 
@@ -489,7 +490,7 @@ async def profile_tone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         await query.edit_message_text(
             "✏️ Enter your custom tone description:\n\n"
             "Example: witty and humorous, inspiring and motivational, data-driven analyst, etc.\n\n"
-            "Type /cancel to exit setup."
+            "Send /cancel to exit setup or /home for main menu."
         )
         return CUSTOM_TONE
 
@@ -506,7 +507,7 @@ async def profile_tone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
             f"Tones selected: {tones_text} ✅\n\n"
             f"Great! Now let's connect your LinkedIn account.\n\n"
             f"Please enter your LinkedIn email address:\n\n"
-            f"Type /cancel to exit setup."
+            f"Send /cancel to exit setup or /home for main menu."
         )
         return LINKEDIN_EMAIL
 
@@ -584,7 +585,7 @@ async def custom_tone_input(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         f"All selected tones: {tones_text}\n\n"
         f"Great! Now let's connect your LinkedIn account.\n\n"
         f"Please enter your LinkedIn email address:\n\n"
-        f"Type /cancel to exit setup."
+        f"Send /cancel to exit setup or /home for main menu."
     )
     return LINKEDIN_EMAIL
 
@@ -647,7 +648,7 @@ async def optimal_times(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             "- position as a builder who ships real products\n"
             "- share authentic behind-the-scenes stories\n"
             "- attract recruiters and collaborators\n\n"
-            "Type /cancel to exit setup."
+            "Send /cancel to exit setup or /home for main menu."
         )
     else:
         # User entered custom times — validate HH:MM format
@@ -672,7 +673,7 @@ async def optimal_times(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             "- position as a builder who ships real products\n"
             "- share authentic behind-the-scenes stories\n"
             "- attract recruiters and collaborators\n\n"
-            "Type /cancel to exit setup."
+            "Send /cancel to exit setup or /home for main menu."
         )
 
     return CONTENT_GOALS
@@ -795,7 +796,7 @@ async def linkedin_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await update.message.reply_text(
         "Great! Now enter your LinkedIn password:\n"
         "(Encrypted and safely stored in your device, not accessible by anyone but you)\n\n"
-        "Type /cancel to exit setup."
+        "Send /cancel to exit setup or /home for main menu."
     )
     return LINKEDIN_PASSWORD
 
@@ -850,7 +851,7 @@ async def linkedin_password(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             "- building AI agents and lessons learned\n"
             "- automating business workflows\n"
             "- the future of work with AI\n\n"
-            "Type /cancel to exit setup."
+            "Send /cancel to exit setup or /home for main menu."
         )
     )
     return CONTENT_THEMES
@@ -1059,6 +1060,49 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text(
         "Setup cancelled. Send /start to begin again."
     )
+    return ConversationHandler.END
+
+
+async def home_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Universal escape — clear all pending states and show main menu."""
+    # Clear all user_data flags that could leave user stuck
+    for key in ['awaiting_custom_post', 'awaiting_post_media', 'updating_field',
+                'linkedin_email_temp', 'generated_post', 'post_id', 'post_media']:
+        context.user_data.pop(key, None)
+
+    telegram_id = update.effective_user.id
+    user = update.effective_user
+
+    try:
+        is_active = db.is_subscription_active(telegram_id)
+    except Exception:
+        is_active = False
+
+    if is_active:
+        await update.message.reply_text(
+            f"🏠 *Main Menu*\n\n"
+            f"Welcome back, {user.first_name}!\n\n"
+            f"Available commands:\n"
+            f"/post - Create a LinkedIn post\n"
+            f"/autopilot - Run full automation\n"
+            f"/engage - Engage with feed\n"
+            f"/connect - Send connection requests\n"
+            f"/schedule - Schedule content\n"
+            f"/stats - View analytics\n"
+            f"/settings - Update your profile\n"
+            f"/cancelsubscription - Manage subscription\n"
+            f"/help - Get help\n\n"
+            f"💡 Tip: Send /home anytime to return here.",
+            parse_mode='Markdown'
+        )
+    else:
+        await update.message.reply_text(
+            f"🏠 *Main Menu*\n\n"
+            f"Hi {user.first_name}! You don't have an active subscription.\n\n"
+            f"Send /start to set up your profile and subscribe.",
+            parse_mode='Markdown'
+        )
+
     return ConversationHandler.END
 
 
@@ -1814,13 +1858,16 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/autopilot - Run full automation\n"
         "/post - Generate and post content\n"
         "/engage - Engage with feed\n"
-        "/connect - Send connection requests\n\n"
+        "/connect - Send connection requests\n"
+        "/schedule - Schedule content\n\n"
         "⚙️ Settings:\n"
+        "/settings - Update your profile\n"
         "/stats - View your analytics\n"
         "/cancelsubscription - Cancel your subscription\n\n"
-        "ℹ️ Support:\n"
-        "/help - Show this message\n"
-        "/cancel - Cancel current operation"
+        "🏠 Navigation:\n"
+        "/home - Return to main menu (use anytime!)\n"
+        "/cancel - Cancel current operation\n"
+        "/help - Show this message"
     )
     await update.message.reply_text(help_text)
 
@@ -1899,7 +1946,7 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
 
     keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data='cancel_settings')]]
     await query.edit_message_text(
-        prompts.get(query.data, "Enter new value:") + "\n\nOr tap Cancel to go back.",
+        prompts.get(query.data, "Enter new value:") + "\n\nOr tap Cancel to go back. You can also send /home anytime.",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
@@ -1926,7 +1973,8 @@ async def handle_settings_update(update: Update, context: ContextTypes.DEFAULT_T
             context.user_data['linkedin_email_temp'] = user_input
             await update.message.reply_text(
                 "Email saved. Now enter your LinkedIn password:\n\n"
-                "🔒 Your password is encrypted and stored securely."
+                "🔒 Your password is encrypted and stored securely.\n\n"
+                "Send /home to cancel and return to main menu."
             )
             return
         else:
@@ -2104,14 +2152,24 @@ async def handle_post_media_upload(update: Update, context: ContextTypes.DEFAULT
             file_size = doc.file_size or 0
             file_name = doc.file_name or f"{telegram_id}_{uuid.uuid4().hex[:8]}"
         else:
-            await update.message.reply_text("Please send a photo or a supported file (JPG, PNG, GIF, MP4, MOV).")
+            kb = [[InlineKeyboardButton("🔙 Back to preview", callback_data='post_back_preview')],
+                  [InlineKeyboardButton("❌ Discard post", callback_data='post_discard')]]
+            await update.message.reply_text(
+                "Please send a photo or a supported file (JPG, PNG, GIF, MP4, MOV).\n\n"
+                "Or send /home to return to main menu.",
+                reply_markup=InlineKeyboardMarkup(kb)
+            )
             context.user_data['awaiting_post_media'] = True
             return
 
         # Validate file size
         if file_size > MAX_MEDIA_SIZE_MB * 1024 * 1024:
+            kb = [[InlineKeyboardButton("🔙 Back to preview", callback_data='post_back_preview')],
+                  [InlineKeyboardButton("❌ Discard post", callback_data='post_discard')]]
             await update.message.reply_text(
-                f"File is too large (max {MAX_MEDIA_SIZE_MB}MB). Please send a smaller file."
+                f"File is too large (max {MAX_MEDIA_SIZE_MB}MB). Please send a smaller file.\n\n"
+                "Or send /home to return to main menu.",
+                reply_markup=InlineKeyboardMarkup(kb)
             )
             context.user_data['awaiting_post_media'] = True
             return
@@ -2119,9 +2177,12 @@ async def handle_post_media_upload(update: Update, context: ContextTypes.DEFAULT
         # Validate extension
         ext = Path(file_name).suffix.lower()
         if ext not in SUPPORTED_MEDIA_EXTENSIONS:
+            kb = [[InlineKeyboardButton("🔙 Back to preview", callback_data='post_back_preview')],
+                  [InlineKeyboardButton("❌ Discard post", callback_data='post_discard')]]
             await update.message.reply_text(
                 f"Unsupported format ({ext}). Supported: JPG, PNG, GIF, MP4, MOV.\n\n"
-                "Please send a supported file."
+                "Please send a supported file or send /home to return to main menu.",
+                reply_markup=InlineKeyboardMarkup(kb)
             )
             context.user_data['awaiting_post_media'] = True
             return
@@ -2144,7 +2205,7 @@ async def handle_post_media_upload(update: Update, context: ContextTypes.DEFAULT
         # Re-show preview with media attached
         generated_post = context.user_data.get('generated_post', '')
         if not generated_post:
-            await update.message.reply_text("Media attached, but no post content found. Use /post to start over.")
+            await update.message.reply_text("Media attached, but no post content found. Use /post to start over or /home to go back.")
             return
 
         keyboard = _build_post_preview_keyboard(telegram_id, context, is_ai=True)
@@ -2165,7 +2226,12 @@ async def handle_post_media_upload(update: Update, context: ContextTypes.DEFAULT
 
     except Exception as e:
         logger.error(f"Error handling post media upload for user {telegram_id}: {e}")
-        await update.message.reply_text(f"Failed to process media: {str(e)}\n\nPlease try again.")
+        kb = [[InlineKeyboardButton("🔙 Back to preview", callback_data='post_back_preview')],
+              [InlineKeyboardButton("❌ Discard post", callback_data='post_discard')]]
+        await update.message.reply_text(
+            f"Failed to process media: {str(e)}\n\nPlease try again or send /home to return to main menu.",
+            reply_markup=InlineKeyboardMarkup(kb)
+        )
         context.user_data['awaiting_post_media'] = True
 
 
@@ -2538,7 +2604,7 @@ async def handle_custom_post_text(update: Update, context: ContextTypes.DEFAULT_
     context.user_data['awaiting_custom_post'] = False
 
     if not custom_post:
-        await update.message.reply_text("❌ Post cannot be empty. Try again or use /post to start over.")
+        await update.message.reply_text("❌ Post cannot be empty. Try again, use /post to start over, or /home for main menu.")
         return
 
     telegram_id = update.effective_user.id
@@ -2579,7 +2645,7 @@ async def handle_post_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             "• Keep it under 3,000 characters\n"
             "• Use line breaks for readability\n"
             "• Add hashtags at the end\n\n"
-            "Type your post now:",
+            "Type your post now, or send /home for main menu:",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode='Markdown'
         )
@@ -3639,7 +3705,12 @@ def main():
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_promo_code_input)
             ],
         },
-        fallbacks=[CommandHandler('cancel', cancel)],
+        fallbacks=[
+            CommandHandler('cancel', cancel),
+            CommandHandler('home', home_command),
+            CommandHandler('start', start),
+        ],
+        allow_reentry=True,
     )
 
     # Add handlers
@@ -3653,6 +3724,7 @@ def main():
     application.add_handler(CommandHandler('settings', settings_command))
     application.add_handler(CommandHandler('post', post_command))
     application.add_handler(CommandHandler('cancelsubscription', cancel_subscription_command))
+    application.add_handler(CommandHandler('home', home_command))
 
     # Add callback handlers for subscription management
     application.add_handler(CallbackQueryHandler(
@@ -3696,7 +3768,11 @@ def main():
                 MessageHandler(filters.Document.PDF, handle_resume_upload),
             ],
         },
-        fallbacks=[CommandHandler('cancel', setjob_cancel)],
+        fallbacks=[
+            CommandHandler('cancel', setjob_cancel),
+            CommandHandler('home', home_command),
+        ],
+        allow_reentry=True,
     )
     application.add_handler(setjob_handler)
     application.add_handler(CommandHandler('jobsearch', job_search_command))
