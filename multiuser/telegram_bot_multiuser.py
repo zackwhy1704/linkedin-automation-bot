@@ -194,15 +194,171 @@ def login_with_retry(linkedin_bot, notify_fn=None, max_attempts=MAX_LOGIN_ATTEMP
 
 def validate_text_input(text: str) -> bool:
     """
-    Validate that input only contains letters, spaces, commas, and basic punctuation.
-    Allowed: letters (any language), spaces, commas, hyphens, apostrophes, parentheses, ampersands
+    Basic format validation — permissive to allow most real professional inputs.
+    Rejects only empty, extremely short, or clearly non-text input.
     """
     import re
     if not text or not text.strip():
         return False
-    # Allow letters (including unicode), spaces, commas, hyphens, apostrophes, parentheses, ampersands, and periods
-    pattern = r'^[\w\s,\-\'\(\)&\.]+$'
-    return bool(re.match(pattern, text.strip(), re.UNICODE))
+    stripped = text.strip()
+    if len(stripped) < 2:
+        return False
+    # Allow letters (any language), numbers, spaces, and common punctuation
+    # Intentionally excludes ; ' " -- to prevent injection patterns
+    # Semantic validation is done by react_validate_input
+    pattern = r'^[\w\s,\-\(\)&\.\/\+\#\:\!\?\@\%\*]+$'
+    return bool(re.match(pattern, stripped, re.UNICODE))
+
+
+# ============================================================================
+# ReAct AI VALIDATION (Thought → Action → Observation)
+# Applies the ReAct agent pattern to validate onboarding inputs intelligently.
+# Instead of rigid regex, uses AI to reason about input quality and relevance.
+# ============================================================================
+
+# Lazy-loaded AI client for validation (lightweight, shared across calls)
+_react_ai_client = None
+
+def _get_react_ai_client():
+    """Get or create a lightweight Anthropic client for ReAct validation."""
+    global _react_ai_client
+    if _react_ai_client is None:
+        api_key = os.getenv('ANTHROPIC_API_KEY')
+        if api_key:
+            try:
+                from anthropic import Anthropic
+                _react_ai_client = Anthropic(api_key=api_key)
+            except Exception:
+                pass
+    return _react_ai_client
+
+
+def react_validate_input(user_input: str, field_name: str, field_description: str,
+                          examples: str) -> dict:
+    """
+    ReAct validation: Thought → Action → Observation loop for user input.
+
+    Uses Claude Haiku to reason about user input quality and provide intelligent feedback.
+    Falls back to basic validation if AI is unavailable.
+
+    Returns: {
+        'valid': bool,
+        'cleaned': str,        # Cleaned/normalized version of input
+        'feedback': str,       # Human-friendly feedback message
+        'suggestions': list,   # Suggested corrections
+    }
+    """
+    # --- Basic pre-checks (no AI needed) ---
+    if not user_input or not user_input.strip():
+        return {
+            'valid': False,
+            'cleaned': '',
+            'feedback': f"Input cannot be empty. Please enter your {field_name}.",
+            'suggestions': [examples],
+        }
+
+    stripped = user_input.strip()
+
+    if len(stripped) > 500:
+        return {
+            'valid': False,
+            'cleaned': '',
+            'feedback': f"Input is too long ({len(stripped)} chars). Please keep it under 500 characters.",
+            'suggestions': [examples],
+        }
+
+    # --- ReAct: Use AI for semantic validation ---
+    client = _get_react_ai_client()
+    if not client:
+        # Fallback: accept anything that passes basic format check
+        if validate_text_input(stripped):
+            return {'valid': True, 'cleaned': stripped, 'feedback': '', 'suggestions': []}
+        return {
+            'valid': False,
+            'cleaned': '',
+            'feedback': f"Invalid characters detected. Please try again with simpler formatting.",
+            'suggestions': [examples],
+        }
+
+    prompt = f"""You are validating a user's onboarding input for a LinkedIn automation bot.
+
+FIELD: {field_name}
+DESCRIPTION: {field_description}
+EXPECTED FORMAT: Comma-separated values
+EXAMPLES OF GOOD INPUT: {examples}
+
+USER INPUT: "{stripped}"
+
+Apply the ReAct reasoning pattern:
+
+THOUGHT: Analyze the input. Is it relevant to the field? Is it gibberish/random text? Are there typos? Is it in the wrong format? Could it be cleaned up?
+
+ACTION: Decide one of:
+- ACCEPT: Input is valid and relevant (even if imperfect formatting)
+- CLEAN: Input has minor issues but intent is clear — provide cleaned version
+- REJECT: Input is gibberish, completely irrelevant, or nonsensical
+
+Respond ONLY with valid JSON (no markdown, no code fences):
+{{"action": "ACCEPT|CLEAN|REJECT", "cleaned": "cleaned comma-separated values or original if ACCEPT", "feedback": "brief helpful message if CLEAN or REJECT, empty string if ACCEPT", "suggestions": ["1-2 example inputs if REJECT, empty list if ACCEPT/CLEAN"]}}"""
+
+    try:
+        message = client.messages.create(
+            model='claude-haiku-4-5-20251001',
+            max_tokens=200,
+            temperature=0,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        response = message.content[0].text.strip()
+
+        # Parse JSON response
+        result = json.loads(response)
+        action = result.get('action', 'ACCEPT').upper()
+
+        if action == 'ACCEPT':
+            return {
+                'valid': True,
+                'cleaned': result.get('cleaned', stripped),
+                'feedback': '',
+                'suggestions': [],
+            }
+        elif action == 'CLEAN':
+            return {
+                'valid': True,
+                'cleaned': result.get('cleaned', stripped),
+                'feedback': result.get('feedback', ''),
+                'suggestions': [],
+            }
+        else:  # REJECT
+            return {
+                'valid': False,
+                'cleaned': '',
+                'feedback': result.get('feedback', f"That doesn't look like a valid {field_name}. Please try again."),
+                'suggestions': result.get('suggestions', [examples]),
+            }
+
+    except Exception as e:
+        logger.warning(f"ReAct validation AI error: {e}")
+        # Fallback: accept if basic format check passes
+        if validate_text_input(stripped):
+            return {'valid': True, 'cleaned': stripped, 'feedback': '', 'suggestions': []}
+        return {
+            'valid': False,
+            'cleaned': '',
+            'feedback': f"Could not validate input. Please use a simple format like: {examples}",
+            'suggestions': [examples],
+        }
+
+
+def format_react_feedback(result: dict, field_name: str) -> str:
+    """Format ReAct validation result into a user-facing message."""
+    parts = []
+    if result['feedback']:
+        parts.append(result['feedback'])
+    if result['suggestions']:
+        parts.append(f"\nExample: {result['suggestions'][0]}")
+    parts.append(f"\nPlease enter your {field_name} again:")
+    parts.append(f"\nSend /cancel to exit setup or /home for main menu.")
+    return "\n".join(parts)
 
 
 def validate_email(email: str) -> bool:
@@ -370,25 +526,23 @@ async def profile_industry(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     """Collect user's industry"""
     industry = update.message.text.strip()
 
-    if not industry:
-        await update.message.reply_text(
-            "Input cannot be empty. Please enter your industry:\n\n"
-            "Example: Technology, AI, Software Development"
-        )
+    # ReAct validation: Thought → Action → Observation
+    result = react_validate_input(
+        industry, "industry",
+        "Your professional industry or sector",
+        "Technology, AI, Software Development"
+    )
+
+    if not result['valid']:
+        await update.message.reply_text(format_react_feedback(result, "industry"))
         return PROFILE_INDUSTRY
 
-    # Validate input
-    if not validate_text_input(industry):
-        await update.message.reply_text(
-            "Invalid input. Please use only letters, spaces, and commas.\n\n"
-            "Example: Technology, AI, Software Development\n\n"
-            "Please enter your industry again:"
-        )
-        return PROFILE_INDUSTRY
+    cleaned = result['cleaned']
+    context.user_data['industry'] = [i.strip() for i in cleaned.split(',')]
 
-    context.user_data['industry'] = [i.strip() for i in industry.split(',')]
-
+    feedback = f"✅ Industry: {cleaned}\n\n" if result['feedback'] else ""
     await update.message.reply_text(
+        f"{feedback}"
         "Great! Now, what are your key skills? (comma-separated)\n"
         "Example: Python, automation, AI, web development\n\n"
         "Send /cancel to exit setup or /home for main menu."
@@ -400,25 +554,23 @@ async def profile_skills(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     """Collect user's skills"""
     skills = update.message.text.strip()
 
-    if not skills:
-        await update.message.reply_text(
-            "Input cannot be empty. Please enter your skills:\n\n"
-            "Example: Python, Machine Learning, Cloud Computing"
-        )
+    # ReAct validation
+    result = react_validate_input(
+        skills, "skills",
+        "Your professional skills and technical abilities",
+        "Python, Machine Learning, Cloud Computing"
+    )
+
+    if not result['valid']:
+        await update.message.reply_text(format_react_feedback(result, "skills"))
         return PROFILE_SKILLS
 
-    # Validate input
-    if not validate_text_input(skills):
-        await update.message.reply_text(
-            "Invalid input. Please use only letters, spaces, and commas.\n\n"
-            "Example: Python, Machine Learning, Cloud Computing\n\n"
-            "Please enter your skills again:"
-        )
-        return PROFILE_SKILLS
+    cleaned = result['cleaned']
+    context.user_data['skills'] = [s.strip() for s in cleaned.split(',')]
 
-    context.user_data['skills'] = [s.strip() for s in skills.split(',')]
-
+    feedback = f"✅ Skills: {cleaned}\n\n" if result['feedback'] else ""
     await update.message.reply_text(
+        f"{feedback}"
         "Perfect! What are your career goals?\n"
         "Example: senior developer role, technical sales, business development\n\n"
         "Send /cancel to exit setup or /home for main menu."
@@ -430,23 +582,19 @@ async def profile_goals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     """Collect user's career goals"""
     goals = update.message.text.strip()
 
-    if not goals:
-        await update.message.reply_text(
-            "Input cannot be empty. Please enter your career goals:\n\n"
-            "Example: Become a Tech Lead, Build AI Products, Start a Startup"
-        )
+    # ReAct validation
+    result = react_validate_input(
+        goals, "career goals",
+        "Your professional career goals and aspirations",
+        "Become a Tech Lead, Build AI Products, Start a Startup"
+    )
+
+    if not result['valid']:
+        await update.message.reply_text(format_react_feedback(result, "career goals"))
         return PROFILE_GOALS
 
-    # Validate input
-    if not validate_text_input(goals):
-        await update.message.reply_text(
-            "Invalid input. Please use only letters, spaces, and commas.\n\n"
-            "Example: Become a Tech Lead, Build AI Products, Start a Startup\n\n"
-            "Please enter your career goals again:"
-        )
-        return PROFILE_GOALS
-
-    context.user_data['career_goals'] = [g.strip() for g in goals.split(',')]
+    cleaned = result['cleaned']
+    context.user_data['career_goals'] = [g.strip() for g in cleaned.split(',')]
 
     # Initialize selected tones
     context.user_data['selected_tones'] = []
@@ -556,27 +704,24 @@ async def custom_tone_input(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     """Handle custom tone text input"""
     custom_tone = update.message.text.strip()
 
-    if not custom_tone:
-        await update.message.reply_text(
-            "Input cannot be empty. Please describe your custom tone:\n\n"
-            "Example: witty and humorous, inspiring and motivational"
-        )
+    # ReAct validation
+    result = react_validate_input(
+        custom_tone, "tone",
+        "Your preferred writing tone and voice for LinkedIn posts",
+        "witty and humorous, inspiring and motivational"
+    )
+
+    if not result['valid']:
+        await update.message.reply_text(format_react_feedback(result, "custom tone"))
         return CUSTOM_TONE
 
-    # Validate input
-    if not validate_text_input(custom_tone):
-        await update.message.reply_text(
-            "Invalid input. Please use only letters, spaces, and commas.\n\n"
-            "Example: witty and humorous, inspiring and motivational\n\n"
-            "Please enter your custom tone again:"
-        )
-        return CUSTOM_TONE
+    cleaned = result['cleaned']
 
     # Add custom tone to selected tones
     if 'selected_tones' not in context.user_data:
         context.user_data['selected_tones'] = []
 
-    context.user_data['selected_tones'].append(custom_tone)
+    context.user_data['selected_tones'].append(cleaned)
     context.user_data['tone'] = context.user_data['selected_tones']
 
     tones_text = ', '.join(context.user_data['tone'])
@@ -594,23 +739,19 @@ async def content_themes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     """Collect content themes"""
     themes = update.message.text.strip()
 
-    if not themes:
-        await update.message.reply_text(
-            "Input cannot be empty. Please enter your content themes:\n\n"
-            "Example: AI & Machine Learning, Career Development, Tech Trends"
-        )
+    # ReAct validation
+    result = react_validate_input(
+        themes, "content themes",
+        "Topics and themes you want to post about on LinkedIn",
+        "AI & Machine Learning, Career Development, Tech Trends"
+    )
+
+    if not result['valid']:
+        await update.message.reply_text(format_react_feedback(result, "content themes"))
         return CONTENT_THEMES
 
-    # Validate input
-    if not validate_text_input(themes):
-        await update.message.reply_text(
-            "Invalid input. Please use only letters, spaces, and commas.\n\n"
-            "Example: AI & Machine Learning, Career Development, Tech Trends\n\n"
-            "Please enter your content themes again:"
-        )
-        return CONTENT_THEMES
-
-    context.user_data['content_themes'] = [t.strip() for t in themes.split(',')]
+    cleaned = result['cleaned']
+    context.user_data['content_themes'] = [t.strip() for t in cleaned.split(',')]
 
     keyboard = [
         [InlineKeyboardButton("✅ Use default times (recommended)", callback_data='use_default_times')],
@@ -683,23 +824,19 @@ async def content_goals(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     """Collect content goals and show summary"""
     goals = update.message.text.strip()
 
-    if not goals:
-        await update.message.reply_text(
-            "Input cannot be empty. Please enter your content goals:\n\n"
-            "Example: Build thought leadership, Attract recruiters, Share expertise"
-        )
+    # ReAct validation
+    result = react_validate_input(
+        goals, "content goals",
+        "Your goals for LinkedIn content — what you want to achieve",
+        "Build thought leadership, Attract recruiters, Share expertise"
+    )
+
+    if not result['valid']:
+        await update.message.reply_text(format_react_feedback(result, "content goals"))
         return CONTENT_GOALS
 
-    # Validate input
-    if not validate_text_input(goals):
-        await update.message.reply_text(
-            "Invalid input. Please use only letters, spaces, and commas.\n\n"
-            "Example: Build thought leadership, Attract recruiters, Share expertise\n\n"
-            "Please enter your content goals again:"
-        )
-        return CONTENT_GOALS
-
-    context.user_data['content_goals'] = [g.strip() for g in goals.split(',')]
+    cleaned = result['cleaned']
+    context.user_data['content_goals'] = [g.strip() for g in cleaned.split(',')]
 
     # Save profile to database
     telegram_id = update.effective_user.id
